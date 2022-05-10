@@ -1,0 +1,30 @@
+[package]
+name = "softauth"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+# Util
+anyhow = "^1.0"
+thiserror = "^1.0"
+ctrlc = "^3.2.2"
+bytes = "^1.1.0"
+zerocopy = "^0.6.1"
+num_enum = "^0.5.7"
+# Logging
+tracing = "^0.1.34"
+tracing-subscriber = "^0.3.11"
+
+# Concurrency
+futures = "^0.3.21"
+tokio = { version = "~1.18.1", features = ["full"] }
+tokio-util = { verison = "^0.7.1", features = ["full"] }
+crossbeam = "0.8"
+
+# UHID
+uhid-virt = "^0.0.5"
+
+[patch.crates-io]
+uhid-virt = { path = "uhid-virt" }
