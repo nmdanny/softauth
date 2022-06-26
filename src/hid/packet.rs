@@ -5,41 +5,19 @@ use std::collections::{
 };
 
 use super::{
-    command::{CommandType, InvalidCommandType},
-    device::HID_REPORT_SIZE,
+    command::{CommandType, InvalidCommandType}
 };
 use bytes::{Buf, BufMut};
+use num_enum::{TryFromPrimitive, IntoPrimitive};
 use thiserror::Error;
 use tokio_util::codec::{Decoder, Encoder};
 use tracing::{event, Level};
 use zerocopy::{AsBytes, BigEndian, ByteSlice, FromBytes, LayoutVerified, Unaligned, U16, U32};
 
-/// A 'Packet' is the PDU of the CTAP-HID protocol. It has a fixed size which equals to
-/// the size of a single HID report (as defined in [HID_REPORT_SIZE])
-///
-/// See https://fidoalliance.org/specs/fido-v2.0-ps-20190130/fido-client-to-authenticator-protocol-v2.0-ps-20190130.html#usb-message-and-packet-structure
-///
-#[derive(Debug)]
-pub enum Packet<B: ByteSlice> {
-    Initialization(LayoutVerified<B, InitializationPacket>),
-    Continuation(LayoutVerified<B, ContinuationPacket>),
-}
 
-impl<B: ByteSlice> Packet<B> {
-    pub fn get_channel_identifier(&self) -> u32 {
-        match self {
-            Packet::Initialization(init) => init.channel_identifier.into(),
-            Packet::Continuation(cont) => cont.channel_identifier.into(),
-        }
-    }
-
-    pub fn get_data(&self) -> &[u8] {
-        match self {
-            Packet::Initialization(init) => &init.data,
-            Packet::Continuation(cont) => &cont.data,
-        }
-    }
-}
+/// Size of an input or output HID report in bytes,
+/// equal to the size of a CTAP-HID packet.
+pub const HID_REPORT_SIZE: u8 = 64;
 
 /// Payload size(bytes) of a CTAP-HID initialization packet
 const INIT_PACKET_PAYLOAD_SIZE: usize = HID_REPORT_SIZE as usize - 7;
@@ -71,23 +49,46 @@ pub struct ContinuationPacket {
     data: [u8; CONT_PACKET_PAYLOAD_SIZE],
 }
 
+/// A CTAP-HID packet
+#[derive(Debug)]
+pub enum Packet<B: ByteSlice> {
+    InitializationPacket(LayoutVerified<B, InitializationPacket>),
+    ContinuationPacket(LayoutVerified<B, ContinuationPacket>)
+}
+
+impl <B: ByteSlice> Packet<B> {
+    /// Creates a packet from a HID report whose size is assumed to be [HID_REPORT_SIZE]
+    pub fn from_report(report: B) -> Self {
+        assert_eq!(report.len(), HID_REPORT_SIZE as usize, "Packet size must match HID_REPORT_SIZE");
+        if report[4] & 0x80 != 0 {
+            Packet::InitializationPacket(LayoutVerified::new_unaligned(report).unwrap())
+        } else {
+            Packet::ContinuationPacket(LayoutVerified::new_unaligned(report).unwrap())
+        }
+    }
+}
+
 /// A message re-assembled from one or more CTAP-HID packets, but yet to have
 /// its payload decoded.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Message {
-    channel_identifier: u32,
-    command: Result<CommandType, InvalidCommandType>,
-    payload: Vec<u8>,
+    pub channel_identifier: u32,
+    pub command: Result<CommandType, InvalidCommandType>,
+    pub payload: Vec<u8>,
 }
 
-struct ChannelParseState {
+/// State used for parsing a single CTAP-HID message.
+#[derive(Debug)]
+pub struct ChannelParseState {
     wip_message: Message,
     remaining_payload_length: usize,
     next_seq_num: u8,
 }
 
 impl ChannelParseState {
-    fn new(init: &InitializationPacket) -> Result<Self, MessageDecodeError> {
+    /// Initializes the parse state with an initialization packet. Returns an
+    /// error if the packet is malformed.
+    pub fn new(init: &InitializationPacket) -> Result<Self, MessageDecodeError> {
         if init.payload_length.get() as usize > MAX_MESSAGE_PAYLOAD_SIZE {
             return Err(MessageDecodeError::MalformedPacket(format!(
                 "Got a packet with payload length of {}, max is {}",
@@ -119,32 +120,38 @@ impl ChannelParseState {
         })
     }
 
-    fn finished(&self) -> bool {
+    pub fn is_finished(&self) -> bool {
         return self.remaining_payload_length == 0;
     }
 
-    fn finish(self) -> Message {
-        if !self.finished() {
-            panic!("Tried to finish a message with missing packets");
+    /// Tries to finish parsing and return the finally assembled message.
+    pub fn try_finish(self) -> Result<Message, Self>{
+        if !self.is_finished() {
+            return Err(self)
         }
-        return self.wip_message;
+        return Ok(self.wip_message);
     }
 
-    fn add_continuation_packet(
+    /// Advances the parser by adding a continuation packet, assumed to
+    /// belong to the same channel as the initialization packet. An error
+    /// is returned if the continuation packet is malformed or unexpected.
+    pub fn add_continuation_packet(
         &mut self,
         cont: &ContinuationPacket,
     ) -> Result<(), MessageDecodeError> {
         assert_eq!(
             cont.channel_identifier.get(),
-            self.wip_message.channel_identifier
+            self.wip_message.channel_identifier,
+            "Got ContinuationPacket with wrong channel ID"
         );
-        if self.finished() {
-            return Err(MessageDecodeError::UnexpectedCont);
+        if self.is_finished() {
+            return Err(MessageDecodeError::UnexpectedCont { chan: self.wip_message.channel_identifier});
         }
         if cont.packet_sequence != self.next_seq_num {
             return Err(MessageDecodeError::UnexpectedSeq {
                 expected: self.next_seq_num,
                 gotten: cont.packet_sequence,
+                chan: self.wip_message.channel_identifier
             });
         }
         if cont.packet_sequence > MAX_SEQ_NUM {
@@ -184,46 +191,83 @@ pub enum MessageDecodeError {
     IOError(#[from] std::io::Error),
 
     #[error("Expected a continuation packet with seq {expected}, got {gotten}")]
-    UnexpectedSeq { expected: u8, gotten: u8 },
+    UnexpectedSeq { expected: u8, gotten: u8, chan: u32 },
 
     #[error("Expected a continuation packet with seq {expected_seq}, got initialization instead.")]
-    UnexpectedInit { expected_seq: u8 },
+    UnexpectedInit { expected_seq: u8, chan: u32},
 
     #[error("Expected an initialization packet, got a continuation packet instead.")]
-    UnexpectedCont,
+    UnexpectedCont { chan: u32 },
 
     #[error("Got a malformed packet: {0}")]
     MalformedPacket(String),
 }
 
+
+impl MessageDecodeError {
+    pub fn get_channel(&self) -> Option<u32> {
+        match self {
+            MessageDecodeError::IOError(_) => None,
+            MessageDecodeError::UnexpectedSeq { chan, .. } => Some(*chan),
+            MessageDecodeError::UnexpectedInit { chan, .. } => Some(*chan),
+            MessageDecodeError::UnexpectedCont { chan } => Some(*chan),
+            MessageDecodeError::MalformedPacket(_) => None,
+        }
+    }
+}
+
 impl MessageDecoder {
-    fn decode_initialization_packet(&mut self, report: &bytes::BytesMut) -> Result<Option<Message>, MessageDecodeError> {
-        assert_eq!(report.len(), HID_REPORT_SIZE as usize);
-        assert_ne!(report[4] & 0x80, 0);
+    /// Resets a channel's parse state, must be invoked after encountering a decode error belonging to a channel.
+    pub fn reset_channel(&mut self, chan: u32) {
+        self.chan_packets.remove(&chan);
+    }
+
+    /// Decodes a new CTAP HID report, updating the state of the decoder, and may also return the final
+    /// decoded message if this was the last packet for said message.
+    pub fn decode_packet<B: AsRef<[u8]>>(&mut self, report: B) -> Result<Option<Message>, MessageDecodeError> {
+        let report = report.as_ref();
+        assert_eq!(report.len(), HID_REPORT_SIZE as usize, "Buffer size doesn't match expected HID REPORT SIZE");
+        if report[4] & 0x80 != 0 {
+            self.decode_initialization_packet(report)
+        } else {
+            self.decode_continuation_packet(report)
+        }
+    }
+
+    
+    /// Tries decoding a new initialization packet. On decode success, might
+    /// return the message if it was entirely contained in the packet's payload.
+    fn decode_initialization_packet<B: AsRef<[u8]>>(&mut self, report: B) -> Result<Option<Message>, MessageDecodeError> {
+        let report = report.as_ref();
+        assert_eq!(report.len(), HID_REPORT_SIZE as usize, "Buffer size doesn't match expected HID REPORT SIZE");
+        assert_ne!(report[4] & 0x80, 0, "MSB of 4th byte must be set in an initialization packet");
         let packet =
-            LayoutVerified::<&[u8], InitializationPacket>::new_unaligned(report.as_ref())
+            LayoutVerified::<&[u8], InitializationPacket>::new_unaligned(report)
                 .unwrap();
         match self.chan_packets.entry(packet.channel_identifier.get()) {
             Entry::Occupied(ent) => {
                 return Err(MessageDecodeError::UnexpectedInit {
                     expected_seq: ent.get().next_seq_num,
+                    chan: packet.channel_identifier.get()
                 })
             }
             Entry::Vacant(ent) => {
                 let parse_state = ChannelParseState::new(&packet)?;
-                if parse_state.finished() {
-                    return Ok(Some(parse_state.finish()));
-                } else {
-                    ent.insert(parse_state);
+                match parse_state.try_finish() {
+                    Ok(message) => return Ok(Some(message)),
+                    Err(parse_state) => { ent.insert(parse_state); }
                 }
             }
         }
         Ok(None)
     }
 
-    fn decode_continuation_packet(&mut self, report: &bytes::BytesMut) -> Result<Option<Message>, MessageDecodeError> {
-        assert_eq!(report.len(), HID_REPORT_SIZE as usize);
-        assert_eq!(report[4] & 0x80, 0);
+    /// Tries decoding a continuation packet. On decode success, if it was
+    /// the final packet of a message - returns that message.
+    fn decode_continuation_packet<B: AsRef<[u8]>>(&mut self, report: B) -> Result<Option<Message>, MessageDecodeError> {
+        let report = report.as_ref();
+        assert_eq!(report.len(), HID_REPORT_SIZE as usize, "Buffer size doesn't match expected HID REPORT SIZE");
+        assert_eq!(report[4] & 0x80, 0, "MSB of 4th byte must not be set in a continuation packet");
         let packet =
             LayoutVerified::<&[u8], ContinuationPacket>::new_unaligned(report.as_ref())
                 .unwrap();
@@ -231,12 +275,12 @@ impl MessageDecoder {
             Entry::Occupied(mut ent) => {
                 let parse_state = ent.get_mut();
                 parse_state.add_continuation_packet(&packet)?;
-                if parse_state.finished() {
+                if parse_state.is_finished() {
                     let (_, parse_state) = ent.remove_entry();
-                    return Ok(Some(parse_state.finish()));
+                    return Ok(Some(parse_state.try_finish().unwrap()))
                 }
             }
-            Entry::Vacant(_) => return Err(MessageDecodeError::UnexpectedCont),
+            Entry::Vacant(_) => return Err(MessageDecodeError::UnexpectedCont { chan: packet.channel_identifier.get()}),
         }
         Ok(None)
     }
@@ -256,11 +300,7 @@ impl Decoder for MessageDecoder {
         // run out of input.
         while src.len() >= HID_REPORT_SIZE as usize {
             let report = src.split_to(HID_REPORT_SIZE as usize);
-            let maybe_message = if report[4] & 0x80 != 0 {
-                self.decode_initialization_packet(&report)?
-            } else {
-                self.decode_continuation_packet(&report)?
-            };
+            let maybe_message = self.decode_packet(report)?;
             if maybe_message.is_some() {
                 return Ok(maybe_message)
             }
@@ -282,6 +322,42 @@ pub struct MessageEncoder {}
 impl MessageEncoder {
     pub fn new() -> Self {
         MessageEncoder {  }
+    }
+
+    pub fn encode_message<B: AsMut<[u8]>>(&self, message: &Message, mut dest: B) -> Result<(), MessageEncoderError> {
+        let mut dest = dest.as_mut();
+        if message.payload.len() > MAX_MESSAGE_PAYLOAD_SIZE {
+            return Err(MessageEncoderError::PayloadTooLarge {
+                got: message.payload.len(),
+                max: MAX_MESSAGE_PAYLOAD_SIZE,
+            });
+        }
+        assert_eq!(dest.len(), 0, "Initial write buffer wasn't empty");
+
+        let (init_payload, other_payloads) = split_to_packet_payloads(&message.payload);
+
+        let init_packet = InitializationPacket {
+            channel_identifier: message.channel_identifier.into(),
+            payload_length: (message.payload.len() as u16).into(),
+            command_identifier: u8::from(
+                message.command
+                    .expect("Cannot encode message with unsupported command"),
+            ) | 0x80,
+            data: init_payload,
+        };
+        dest.put(init_packet.as_bytes());
+
+        for (seq, payload) in other_payloads.enumerate() {
+            assert!(seq < 0x80, "Impossible, tried writing too many packets");
+            let cont_payload = ContinuationPacket {
+                channel_identifier: message.channel_identifier.into(),
+                packet_sequence: (seq as u8).into(),
+                data: payload,
+            };
+            dest.put(cont_payload.as_bytes());
+        }
+
+        Ok(())
     }
 }
 
@@ -310,38 +386,7 @@ impl Encoder<Message> for MessageEncoder {
     type Error = MessageEncoderError;
 
     fn encode(&mut self, item: Message, dst: &mut bytes::BytesMut) -> Result<(), Self::Error> {
-        if item.payload.len() > MAX_MESSAGE_PAYLOAD_SIZE {
-            return Err(MessageEncoderError::PayloadTooLarge {
-                got: item.payload.len(),
-                max: MAX_MESSAGE_PAYLOAD_SIZE,
-            });
-        }
-        assert_eq!(dst.len(), 0, "Initial write buffer wasn't empty");
-
-        let (init_payload, other_payloads) = split_to_packet_payloads(&item.payload);
-
-        let init_packet = InitializationPacket {
-            channel_identifier: item.channel_identifier.into(),
-            payload_length: (item.payload.len() as u16).into(),
-            command_identifier: u8::from(
-                item.command
-                    .expect("Cannot encode message with unsupported command"),
-            ) | 0x80,
-            data: init_payload,
-        };
-        dst.put(init_packet.as_bytes());
-
-        for (seq, payload) in other_payloads.enumerate() {
-            assert!(seq < 0x80, "Impossible, tried writing too many packets");
-            let cont_payload = ContinuationPacket {
-                channel_identifier: item.channel_identifier.into(),
-                packet_sequence: (seq as u8).into(),
-                data: payload,
-            };
-            dst.put(cont_payload.as_bytes());
-        }
-
-        Ok(())
+        self.encode_message(&item, dst)
     }
 }
 

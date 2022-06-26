@@ -766,6 +766,7 @@ version = "0.0.5"
 dependencies = [
  "enumflags2",
  "libc",
+ "thiserror",
  "uhidrs-sys",
 ]
 
