@@ -1,25 +1,47 @@
 use thiserror::Error;
 use bytes::BytesMut;
 use tracing::{info, trace, debug_span, error, warn, instrument, debug, trace_span};
+use zerocopy::{LayoutVerified, AsBytes};
 
-use crate::hid::command::{InvalidCommandType, CommandType};
+use crate::hid::{command::{InvalidCommandType, CommandType}, channel::RESERVED_CHANNEL};
 
-use super::{transport::{HIDTransport}, channel::{ChannelAllocator, BROADCAST_CHANNEL}, packet::{Message, MessageDecodeError, ChannelParseState, Packet, MessageEncoder, HID_REPORT_SIZE, InitializationPacket}, command::ErrorCode};
+use super::{transport::{HIDTransport}, channel::{ChannelAllocator, BROADCAST_CHANNEL}, packet::{Message, MessageDecodeError, ChannelParseState, Packet, MessageEncoder, HID_REPORT_SIZE, InitializationPacket}, command::{ErrorCode, InitCommand, InitCommandResponse}};
 
+
+/// An error that occurs during processing of a CTAP-HID packet/transaction. 
 #[derive(Debug, Error)]
 pub enum ServerError {
     #[error(transparent)]
     MessageDecodeError (#[from] MessageDecodeError),
 
-    #[error("Channel {busy_chan} is busy")]
-    ChannelBusy { busy_chan: u32, new_chan: u32}
+    #[error("[chan {new_chan}] Server is busy on channel {busy_chan}")]
+    ChannelBusy { busy_chan: u32, new_chan: u32},
+
+    #[error("[chan {chan}] Invalid channel")]
+    InvalidChannel { chan: u32 },
+
+    #[error("[chan {chan}] Misc error")]
+    Other { chan: u32, reason: String}
 }
 
-impl Into<Message> for ServerError {
-    fn into(self) -> Message {
-        match self {
+impl From<ServerError> for ErrorCode {
+    fn from(err: ServerError) -> Self {
+        match err {
             ServerError::MessageDecodeError(err) => err.into(),
-            ServerError::ChannelBusy { new_chan, .. } => ErrorCode::ChannelBusy.to_message(new_chan)
+            ServerError::ChannelBusy { .. } => ErrorCode::ChannelBusy,
+            ServerError::InvalidChannel { .. } => ErrorCode::InvalidChannel,
+            ServerError::Other { .. } => ErrorCode::Other
+        }
+    }
+}
+
+impl From<ServerError> for Message {
+    fn from(err: ServerError) -> Self {
+        match err {
+            ServerError::MessageDecodeError(err) => err.into(),
+            ServerError::ChannelBusy { new_chan, .. } => ErrorCode::ChannelBusy.to_message(new_chan),
+            ServerError::InvalidChannel { chan } => ErrorCode::InvalidChannel.to_message(chan),
+            ServerError::Other { chan, .. } => ErrorCode::Other.to_message(chan)
         }
     }
 }
@@ -35,7 +57,7 @@ enum ServerState {
 
 
 /// Handles logic of CTAP-HID packet processing, does not include
-/// IO nor keepalive messages.
+/// IO, keepalive messages or timeouts.
 pub struct ServerLogic {
     chan_alloc: ChannelAllocator,
     state: ServerState
@@ -59,15 +81,18 @@ impl CTAPServer {
 
     /// Runs forever, processing CTAP-HID packets. May return early in case of a transport errors.
     pub fn run(&mut self) -> anyhow::Result<()> {
-        let mut bytes = BytesMut::new();
         loop {
             let report = self.transport.receive_report()?;
             let packet = Packet::from_report(report.as_ref());
+
+            let span = debug_span!("Packet");
+            let _enter = span.enter();
             let maybe_message = match self.logic.handle_packet(packet) {
                 Ok(maybe_message) => maybe_message,
                 Err(error) => Some(error.into())
             };
             if let Some(message) = maybe_message {
+                trace!(?message, "Writing a message");
                 self.write_message(message)?;
             }
         }
@@ -91,6 +116,7 @@ impl ServerLogic {
     pub fn new() -> Self {
         ServerLogic { chan_alloc:  ChannelAllocator::new(), state: ServerState::Idle }
     }
+    
     pub fn is_busy(&self) -> bool {
         if let ServerState::Busy { .. } = self.state {
             true
@@ -114,12 +140,14 @@ impl ServerLogic {
         let chan = init_packet.channel_identifier.get();
         match ChannelParseState::new(init_packet) {
             Ok(mut decoder) => {
-                if decoder.is_finished() {
-                    let message = decoder.try_finish().unwrap();
+                if let Some(message) = decoder.try_finish() {
                     self.state = ServerState::Busy { chan, decoder };
-                    return self.process_message(&message);
+                    let result = self.process_message(&message);
+                    self.state = ServerState::Idle;
+                    return result;
                 } else {
                     trace!("Got an initialization packet, waiting for more");
+                    assert!(chan != RESERVED_CHANNEL && chan != BROADCAST_CHANNEL, "Must not be broadcast");
                     self.state = ServerState::Busy { chan, decoder };
                     return Ok(None)
                 }
@@ -131,24 +159,72 @@ impl ServerLogic {
         };
     }
 
+    fn handle_init(&mut self, message: &Message) -> HandlerResult {
+        let chan = message.channel_identifier;
+        let msg = LayoutVerified::<_, InitCommand>::new_unaligned(message.payload.as_ref())
+            .ok_or(MessageDecodeError::InvalidPayloadLength { chan, invalid_len: message.payload.len() as u16})?;
+        
+        let mut ret_msg = Message {
+            channel_identifier: chan,
+            command: message.command,
+            payload: Vec::new()
+        };
+        if chan == BROADCAST_CHANNEL {
+            let new_cid = self.chan_alloc.allocate().ok_or_else(|| {
+                error!("Could not allocate a channel, server full");
+                ServerError::Other { chan, reason: "Could not allocate a channel".into() }
+            })?;
+            ret_msg.payload.extend_from_slice(&InitCommandResponse::new(msg.nonce, new_cid).as_bytes());
+            trace!(?new_cid, "Allocated new channel");
+            return Ok(Some(ret_msg));
+        } else {
+            ret_msg.payload.extend_from_slice(&InitCommandResponse::new(msg.nonce, chan).as_bytes());
+            self.abort_transaction();
+            return Ok(Some(ret_msg));
+        }
+    }
+
     #[instrument(skip(self), level = "debug")]
     pub fn process_message(&mut self, message: &Message) -> HandlerResult {
-        debug!("Processing message");
-        Ok(None)
+        let chan = message.channel_identifier;
+        let command = message.command.map_err(|reason| MessageDecodeError::InvalidCommand { chan, reason })?;
+        trace!("Processing message");
+        match command {
+            CommandType::MSG => error!("TODO U2F message"),
+            CommandType::CBOR => error!("TODO CBOR"),
+            CommandType::INIT => return self.handle_init(message),
+            CommandType::PING => return Ok(Some(message.clone())),
+            CommandType::CANCEL => error!("TODO cancel"),
+            CommandType::ERROR => error!("Impossible - authenticator received an error message"),
+            CommandType::KEEPALIVE => error!("Impossible - authenticator received a keepalive message"),
+            CommandType::WINK => error!("TODO wink"),
+            CommandType::LOCK => error!("LOCK unsupported"),
+        }
+        Err(MessageDecodeError::InvalidCommand { chan, reason: InvalidCommandType::InvalidCommand(command.into()) }
+            .into())
     }
 
     /// Handles a packet, may return a message to be written in response to the packet.
     pub fn handle_packet(&mut self, packet: Packet<&[u8]>) -> HandlerResult {
-        let span = trace_span!("Packet", ?self.state);
-        let _enter = span.enter();
         trace!(?packet, chan=packet.get_channel(), "Received a CTAP-HID packet");
+        let new_chan = packet.get_channel();
 
-        match (packet.get_channel(), &mut self.state, packet) {
-            (new_chan, ServerState::Busy { chan, .. }, _) if new_chan != *chan => {
+        if new_chan == RESERVED_CHANNEL {
+            error!("Received invalid CID - reserved channel");
+            return Err(ServerError::InvalidChannel { chan: new_chan })
+        };
+
+        if new_chan != BROADCAST_CHANNEL && !self.chan_alloc.is_allocated(new_chan) {
+            error!(?new_chan, "Received a non-allocated channel");
+            return Err(ServerError::InvalidChannel { chan: new_chan })
+        }
+
+        match (&mut self.state, packet) {
+            (ServerState::Busy { chan, .. }, _) if new_chan != *chan => {
                 error!(?new_chan, cur_chan=chan, "Got packet from a conflicting channel");
                 return Err(ServerError::ChannelBusy { busy_chan: *chan, new_chan });
             },
-            (new_chan, ServerState::Busy { chan, decoder}, Packet::InitializationPacket(init)) => {
+            (ServerState::Busy { chan, decoder}, Packet::InitializationPacket(init)) => {
                 assert_eq!(new_chan, *chan, "Impossible");
                 if init.get_command_type() == Ok(CommandType::INIT) {
                     self.abort_transaction();
@@ -163,7 +239,7 @@ impl ServerLogic {
                     return Err(ServerError::ChannelBusy { busy_chan: *chan, new_chan });
                 }
             },
-            (new_chan, ServerState::Busy { chan, ref mut decoder}, Packet::ContinuationPacket(cont)) => {
+            (ServerState::Busy { chan, ref mut decoder}, Packet::ContinuationPacket(cont)) => {
                 assert_eq!(new_chan, *chan, "Impossible");
                 match decoder.add_continuation_packet(&cont) {
                     Ok(()) if decoder.is_finished() => { 
@@ -182,11 +258,11 @@ impl ServerLogic {
                 }
 
             },
-            (new_chan, ServerState::Idle, Packet::ContinuationPacket(_)) => {
+            (ServerState::Idle, Packet::ContinuationPacket(_)) => {
                 error!("Received a continuation packet while an initialization packet was expected");
                 return Err(MessageDecodeError::UnexpectedCont { chan: new_chan }.into());
             },
-            (_, ServerState::Idle, Packet::InitializationPacket(init)) => {
+            (ServerState::Idle, Packet::InitializationPacket(init)) => {
                 trace!("Received an initialization packet while idle, beginning new transaction");
                 return self.begin_transaction(&*init);
             }

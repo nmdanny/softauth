@@ -86,6 +86,10 @@ pub struct InitCommandResponse {
     pub capabilities_flag: u8
 }
 
+const CAPABILITY_WINK: u8 = 0x01;
+const CAPABILITY_CBOR: u8 = 0x04;
+const CAPABILITY_NMSG: u8 = 0x08;
+
 impl InitCommandResponse {
     pub fn new(nonce: [u8; 8], channel_id: u32) -> Self {
         InitCommandResponse { 
@@ -95,7 +99,7 @@ impl InitCommandResponse {
             major_device_version: 0, 
             minor_device_version: 0, 
             build_device_version: 0, 
-            capabilities_flag: 0
+            capabilities_flag: CAPABILITY_CBOR | CAPABILITY_NMSG
         }
     }
 }

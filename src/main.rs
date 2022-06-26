@@ -4,7 +4,7 @@ use anyhow::Context;
 use tracing::{info, debug};
 use uhid_virt::UHIDWrite;
 
-use crate::hid::{command_handler::CTAPServer, linux::uhid_transport::LinuxUHIDTransport};
+use crate::hid::{server::CTAPServer, linux::uhid_transport::LinuxUHIDTransport};
 
 fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();

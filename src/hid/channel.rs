@@ -12,6 +12,10 @@ impl ChannelAllocator {
        ChannelAllocator { used: BTreeSet::new() } 
     }
 
+    pub fn is_allocated(&self, chan: u32) -> bool {
+        return self.used.contains(&chan);
+    }
+
     pub fn allocate(&mut self) -> Option<u32> {
         for i in 1 .. BROADCAST_CHANNEL {
             if self.used.insert(i) {

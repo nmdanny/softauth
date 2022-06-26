@@ -221,6 +221,9 @@ pub enum MessageDecodeError {
     #[error("[chan {chan}] Got an invalid command: {reason}")]
     InvalidCommand{ chan: u32, reason: InvalidCommandType },
 
+    #[error("[chan {chan}] Got an invalid parameter: {reason}")]
+    InvalidParameter{ chan: u32, reason: String },
+
     #[error(transparent)]
     IoError(#[from] std::io::Error)
 }
@@ -233,23 +236,32 @@ impl MessageDecodeError {
             MessageDecodeError::UnexpectedInit { chan, .. } => *chan,
             MessageDecodeError::UnexpectedCont { chan } => *chan,
             MessageDecodeError::InvalidPayloadLength { chan, .. } => *chan,
+            MessageDecodeError::InvalidParameter { chan, .. } => *chan,
             MessageDecodeError::InvalidCommand { chan, .. } => *chan,
             MessageDecodeError::IoError(..) => BROADCAST_CHANNEL 
         }
     }
 }
 
-impl Into<Message> for MessageDecodeError {
-    fn into(self) -> Message {
-        let err_code = match self {
+impl From<MessageDecodeError> for ErrorCode {
+    fn from(err: MessageDecodeError) -> Self {
+        match err {
             MessageDecodeError::UnexpectedSeq { .. } => ErrorCode::InvalidSeq,
-            MessageDecodeError::UnexpectedInit { .. } => todo!(),
-            MessageDecodeError::UnexpectedCont { .. } => todo!(),
+            MessageDecodeError::UnexpectedInit { .. } => ErrorCode::Other,
+            MessageDecodeError::UnexpectedCont { .. } => ErrorCode::Other,
             MessageDecodeError::InvalidPayloadLength { .. } => ErrorCode::InvalidLen,
             MessageDecodeError::InvalidCommand { .. } => ErrorCode::InvalidCmd,
+            MessageDecodeError::InvalidParameter { .. } => ErrorCode::InvalidPar,
             MessageDecodeError::IoError(..) => ErrorCode::Other
-        };
-        err_code.to_message(self.get_channel())
+        }
+    }
+}
+
+impl From<MessageDecodeError> for Message {
+    fn from(err: MessageDecodeError) -> Self {
+        let channel = err.get_channel();
+        let err_code: ErrorCode = err.into();
+        err_code.to_message(channel)
     }
 }
 
