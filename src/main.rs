@@ -1,4 +1,5 @@
 mod hid;
+mod authenticator;
 
 use anyhow::Context;
 use tracing::{info, debug};

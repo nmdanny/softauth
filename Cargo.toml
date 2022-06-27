@@ -23,6 +23,10 @@ tokio = { version = "~1.18.1", features = ["full"] }
 tokio-util = { verison = "^0.7.1", features = ["full"] }
 crossbeam = "0.8"
 
+# serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_cbor = "0.10"
+
 # UHID
 uhid-virt = "^0.0.5"
 
