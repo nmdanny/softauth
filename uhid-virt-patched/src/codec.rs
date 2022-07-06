@@ -3,6 +3,7 @@ use std::mem;
 use std::slice;
 
 use enumflags2::BitFlags;
+use thiserror::Error;
 
 use uhidrs_sys as sys;
 
@@ -10,15 +11,19 @@ use crate::uhid_device::CreateParams;
 
 /// Any IO error will probably be 'permission-denied' if you don't have access to open /dev/uhid
 /// An unknown event type error should only occur if a new event has been added to `uhid-sys` that this wrapper is unaware of.
+#[derive(Debug, Error)]
 pub enum StreamError {
-    Io(std::io::Error),
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error("Unknown event type: {0}")]
     UnknownEventType(u32),
 }
 
 /// Each of these flags defines whether a given report-type uses numbered reports.
 /// If numbered reports are used for a type, all messages from the kernel already have the report-number as prefix. Otherwise, no prefix is added by the kernel.
 /// For messages sent by user-space to the kernel, you must adjust the prefixes according to these flags.
-#[derive(BitFlags, Copy, Clone, PartialEq)]
+#[derive(Debug, BitFlags, Copy, Clone, PartialEq)]
 #[repr(u64)]
 pub enum DevFlags {
     FeatureReportsNumbered = 0b0000_0001,
@@ -65,6 +70,7 @@ pub enum Bus {
 pub const UHID_EVENT_SIZE: usize = mem::size_of::<sys::uhid_event>();
 
 /// See https://www.kernel.org/doc/html/latest/hid/uhid.html#write
+#[derive(Debug)]
 pub enum InputEvent<'a> {
     Create(CreateParams),
     Destroy,
@@ -72,6 +78,7 @@ pub enum InputEvent<'a> {
     GetReportReply { id: u32, err: u16, data: Vec<u8> },
     SetReportReply { id: u32, err: u16 },
 }
+
 
 impl<'a> Into<sys::uhid_event> for InputEvent<'a> {
     fn into(self) -> sys::uhid_event {
@@ -145,7 +152,9 @@ impl<'a> Into<sys::uhid_event> for InputEvent<'a> {
     }
 }
 
+
 /// See https://www.kernel.org/doc/html/latest/hid/uhid.html#read
+#[derive(Debug)]
 pub enum OutputEvent {
     Start {
         dev_flags: Vec<DevFlags>,
