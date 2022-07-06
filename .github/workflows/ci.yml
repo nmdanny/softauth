@@ -18,6 +18,8 @@ jobs:
           - nightly
 
     steps:
+    - name: Install dependencies
+      run: sudo apt-get install -y libclang-dev
     - uses: actions/checkout@v2
     - uses: actions-rs/toolchain@v1
       with:
@@ -26,7 +28,7 @@ jobs:
     - name: Build
       run: cargo build --verbose
     # clippy
-    - run: rustup component add clippy fmt
+    - run: rustup component add clippy
       if: matrix.rust == 'beta' || matrix.rust == 'stable'
     - working-directory: ${{ matrix.conf.name }}
       name: clippy ${{ matrix.conf.name }}
@@ -34,7 +36,7 @@ jobs:
       if: matrix.rust == 'beta' || matrix.rust == 'stable'
     # fmt
     - working-directory: ${{ matrix.conf.name }}
-      name: clippy ${{ matrix.conf.name }}
+      name: rustfmt ${{ matrix.conf.name }}
       run: cargo fmt --check
       if: matrix.rust == 'beta' || matrix.rust == 'stable'
     # tests
