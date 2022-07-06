@@ -19,7 +19,7 @@ impl<'de, T: Keymappable<u8> + Deserialize<'de>> Deserialize<'de> for KeymappedS
         let map_entries = value.as_map_mut().unwrap();
 
         for (key, _value) in map_entries {
-            let int_key = i128::from(key.as_integer().ok_or(serde::de::Error::custom(format!(
+            let int_key = i128::from(key.as_integer().ok_or_else(|| serde::de::Error::custom(format!(
                 "Expected top level map key to be integer, got {:?} instead",
                 key
             )))?);
@@ -29,7 +29,7 @@ impl<'de, T: Keymappable<u8> + Deserialize<'de>> Deserialize<'de> for KeymappedS
                     int_key
                 ))
             })?;
-            let string_key = T::inverse_map_field(&u8_key).ok_or(serde::de::Error::custom(
+            let string_key = T::inverse_map_field(&u8_key).ok_or_else(|| serde::de::Error::custom(
                 format!("The integer key {} cannot be mapped to a field", u8_key),
             ))?;
             *key = Value::Text(string_key);

@@ -13,7 +13,7 @@ impl ChannelAllocator {
     }
 
     pub fn is_allocated(&self, chan: u32) -> bool {
-        return self.used.contains(&chan);
+        self.used.contains(&chan)
     }
 
     pub fn allocate(&mut self) -> Option<u32> {

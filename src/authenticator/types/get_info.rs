@@ -4,12 +4,12 @@ use serde::{Deserialize, Serialize};
 
 /// https://www.w3.org/TR/webauthn-2/#aaguid
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct AAGUID([u8; 16]);
+pub struct Aaguid([u8; 16]);
 
-const APP_AAGUID: AAGUID = AAGUID([1, 3, 3, 7, 1, 1, 2, 3, 5, 8, 13, 21, 1, 3, 3, 7]);
+const APP_AAGUID: Aaguid = Aaguid([1, 3, 3, 7, 1, 1, 2, 3, 5, 8, 13, 21, 1, 3, 3, 7]);
 
 /// https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-20210615.html#option-id
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AuthenticatorGetInfoOptions {
     plot: bool,
@@ -20,25 +20,12 @@ pub struct AuthenticatorGetInfoOptions {
     pin_uv_auth_token: bool,
 }
 
-impl Default for AuthenticatorGetInfoOptions {
-    fn default() -> Self {
-        Self {
-            plot: Default::default(),
-            rk: Default::default(),
-            client_pin: Default::default(),
-            up: Default::default(),
-            uv: Default::default(),
-            pin_uv_auth_token: Default::default(),
-        }
-    }
-}
-
 /// https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-20210615.html#authenticatorGetInfo
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuthenticatorGetInfoResponse {
     versions: Vec<String>,
     extensions: Vec<String>,
-    aaguid: AAGUID,
+    aaguid: Aaguid,
     options: AuthenticatorGetInfoOptions,
 }
 

@@ -1,6 +1,6 @@
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use thiserror::Error;
-use zerocopy::{FromBytes, AsBytes, Unaligned, U32, BigEndian, U64};
+use zerocopy::{FromBytes, AsBytes, Unaligned, U32, BigEndian};
 
 use super::packet::Message;
 
@@ -9,16 +9,16 @@ use super::packet::Message;
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, TryFromPrimitive, IntoPrimitive)]
 pub enum CommandType {
-    MSG = 0x03,
-    CBOR = 0x10,
-    INIT = 0x06,
-    PING = 0x01,
-    CANCEL = 0x11,
-    ERROR = 0x3F,
-    KEEPALIVE = 0x3B,
+    Msg = 0x03,
+    Cbor = 0x10,
+    Init = 0x06,
+    Ping = 0x01,
+    Cancel = 0x11,
+    Error = 0x3F,
+    Keepalive = 0x3B,
     // optional:
-    WINK = 0x08,
-    LOCK = 0x04,
+    Wink = 0x08,
+    Lock = 0x04,
 }
 
 const CTAPHID_VENDOR_FIRST: u8 = 0x40;
@@ -38,10 +38,10 @@ impl CommandType {
     pub fn from_packet_command_identifier(mut command_identifier: u8) -> Result<CommandType, InvalidCommandType> {
         assert!(command_identifier & 0x80 != 0, "Command identifier MSB must be set");
         command_identifier &= 0x7F;
-        if command_identifier >= CTAPHID_VENDOR_FIRST && command_identifier <= CTAPHID_VENDOR_LAST {
+        if (CTAPHID_VENDOR_FIRST..=CTAPHID_VENDOR_LAST).contains(&command_identifier) {
             return Err(InvalidCommandType::UnsupportedVendor(command_identifier));
         }
-        return CommandType::try_from(command_identifier)
+        CommandType::try_from(command_identifier)
             .map_err(|_| InvalidCommandType::InvalidCommand(command_identifier))
     }
 }
@@ -64,7 +64,7 @@ pub enum ErrorCode {
 
 impl ErrorCode {
     pub fn to_message(self, channel_identifier: u32) -> Message {
-        Message { channel_identifier, command: Ok(CommandType::ERROR), payload: vec![self.into() ] }
+        Message { channel_identifier, command: Ok(CommandType::Error), payload: vec![self.into() ] }
     }
 }
 
@@ -93,7 +93,7 @@ const CAPABILITY_NMSG: u8 = 0x08;
 impl InitCommandResponse {
     pub fn new(nonce: [u8; 8], channel_id: u32) -> Self {
         InitCommandResponse { 
-            nonce: nonce, 
+            nonce, 
             channel_id: channel_id.into(),
             ctaphid_version: 2,
             major_device_version: 0, 

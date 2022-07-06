@@ -7,7 +7,7 @@ use crate::hid::packet::HID_REPORT_SIZE;
 
 
 
-static CTAP_REPORT_DESCRIPTOR: &'static [u8] = &[
+static CTAP_REPORT_DESCRIPTOR: &[u8] = &[
     0x06, 0xD0, 0xF1, // HID_UsagePage ( FIDO_USAGE_PAGE ),
     0x09, 0x01, // HID_Usage ( FIDO_USAGE_CTAPHID ),
     0xA1, 0x01, // HID_Collection ( HID_Application ),

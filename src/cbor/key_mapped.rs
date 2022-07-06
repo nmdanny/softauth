@@ -77,11 +77,12 @@ impl<U: Serialize + Eq + Hash + Clone, T: VecKeymappable<U>> Keymappable<U> for 
     }
 }
 
+#[cfg(test)]
 mod tests {
-    use serde::Deserialize;
-
-    use super::*;
-
+    use super::{KeymappedStruct, VecKeymappable};
+    use serde::{Serialize, Deserialize};
+     
+    
     #[test]
     fn test_keymapped() {
         #[derive(Serialize, Deserialize)]

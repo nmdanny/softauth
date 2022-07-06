@@ -1,17 +1,16 @@
 use std::collections::{
-    self,
-    hash_map::{self, Entry},
+    hash_map::{Entry},
     HashMap,
 };
 
 use super::{
     command::{CommandType, InvalidCommandType, ErrorCode}, channel::BROADCAST_CHANNEL
 };
-use bytes::{Buf, BufMut};
-use num_enum::{TryFromPrimitive, IntoPrimitive};
+use bytes::BufMut;
+
 use thiserror::Error;
 use tokio_util::codec::{Decoder, Encoder};
-use tracing::{event, Level};
+
 use zerocopy::{AsBytes, BigEndian, ByteSlice, FromBytes, LayoutVerified, Unaligned, U16, U32};
 
 
@@ -43,7 +42,7 @@ pub struct InitializationPacket {
 
 impl InitializationPacket {
     pub fn get_command_type(&self) -> Result<CommandType, InvalidCommandType> {
-        return CommandType::from_packet_command_identifier(self.command_identifier)
+        CommandType::from_packet_command_identifier(self.command_identifier)
     }
 }
 
@@ -135,7 +134,7 @@ impl ChannelParseState {
     }
 
     pub fn is_finished(&self) -> bool {
-        return self.remaining_payload_length == 0;
+        self.remaining_payload_length == 0
     }
 
     /// Tries to finish parsing and return the finally assembled message.
@@ -143,11 +142,7 @@ impl ChannelParseState {
         if !self.is_finished() {
             return None;
         }
-        if let Some(message) = self.wip_message.take() {
-            Some(message)
-        } else {
-            None
-        }
+        self.wip_message.take()
     }
 
     /// Advances the parser by adding a continuation packet, assumed to
@@ -318,7 +313,7 @@ impl MessageDecoder {
         assert_eq!(report.len(), HID_REPORT_SIZE as usize, "Buffer size doesn't match expected HID REPORT SIZE");
         assert_eq!(report[4] & 0x80, 0, "MSB of 4th byte must not be set in a continuation packet");
         let packet =
-            LayoutVerified::<&[u8], ContinuationPacket>::new_unaligned(report.as_ref())
+            LayoutVerified::<&[u8], ContinuationPacket>::new_unaligned(report)
                 .unwrap();
         match self.chan_packets.entry(packet.channel_identifier.get()) {
             Entry::Occupied(mut ent) => {
@@ -354,7 +349,7 @@ impl Decoder for MessageDecoder {
                 return Ok(maybe_message)
             }
         }
-        return Ok(None);
+        Ok(None)
     }
 }
 
@@ -399,7 +394,7 @@ impl MessageEncoder {
             assert!(seq < 0x80, "Impossible, tried writing too many packets");
             let cont_payload = ContinuationPacket {
                 channel_identifier: message.channel_identifier.into(),
-                packet_sequence: (seq as u8).into(),
+                packet_sequence: (seq as u8),
                 data: payload,
             };
             dest.put(cont_payload.as_bytes());
@@ -410,11 +405,11 @@ impl MessageEncoder {
     }
 }
 
-fn split_to_packet_payloads<'a>(
-    payload: &'a [u8],
+fn split_to_packet_payloads(
+    payload: &[u8],
 ) -> (
     [u8; INIT_PACKET_PAYLOAD_SIZE],
-    impl Iterator<Item = [u8; CONT_PACKET_PAYLOAD_SIZE]> + 'a,
+    impl Iterator<Item = [u8; CONT_PACKET_PAYLOAD_SIZE]> + '_,
 ) {
     let mut init_payload = [0u8; INIT_PACKET_PAYLOAD_SIZE];
     let init_payload_size = INIT_PACKET_PAYLOAD_SIZE.min(payload.len());
@@ -425,10 +420,10 @@ fn split_to_packet_payloads<'a>(
         let mut cont_payload = [0u8; CONT_PACKET_PAYLOAD_SIZE];
         let cont_payload_size = CONT_PACKET_PAYLOAD_SIZE.min(chunk.len());
         cont_payload[..cont_payload_size].copy_from_slice(&chunk[..cont_payload_size]);
-        return cont_payload;
+        cont_payload
     });
 
-    return (init_payload, it);
+    (init_payload, it)
 }
 
 impl Encoder<Message> for MessageEncoder {
@@ -479,8 +474,8 @@ mod tests {
         ];
         let raw = expected
             .iter()
-            .map(|v| v.clone())
             .flatten()
+            .cloned()
             .collect::<Vec<_>>();
         assert_eq!(split_to_vecs(&raw), expected);
     }
@@ -511,7 +506,7 @@ mod tests {
 
         let msg = Message {
             channel_identifier: 1337,
-            command: Ok(CommandType::MSG),
+            command: Ok(CommandType::Msg),
             payload: vec![1, 3, 3, 7]
         };
 
@@ -534,7 +529,7 @@ mod tests {
     pub fn test_encode_decode_longer_msg() {
         let msg = Message {
             channel_identifier: 1337,
-            command: Ok(CommandType::MSG),
+            command: Ok(CommandType::Msg),
             payload: vec![1u8; INIT_PACKET_PAYLOAD_SIZE + CONT_PACKET_PAYLOAD_SIZE * 2 + 5]
         };
 

@@ -1,6 +1,6 @@
 use thiserror::Error;
 use bytes::BytesMut;
-use tracing::{info, trace, debug_span, error, warn, instrument, debug, trace_span};
+use tracing::{trace, debug_span, error, warn, instrument};
 use zerocopy::{LayoutVerified, AsBytes};
 
 use crate::hid::{command::{InvalidCommandType, CommandType}, channel::RESERVED_CHANNEL};
@@ -118,11 +118,7 @@ impl ServerLogic {
     }
     
     pub fn is_busy(&self) -> bool {
-        if let ServerState::Busy { .. } = self.state {
-            true
-        } else {
-            false
-        }
+        matches!(self.state, ServerState::Busy {..})
     }
 
 
@@ -144,19 +140,19 @@ impl ServerLogic {
                     self.state = ServerState::Busy { chan, decoder };
                     let result = self.process_message(&message);
                     self.state = ServerState::Idle;
-                    return result;
+                    result
                 } else {
                     trace!("Got an initialization packet, waiting for more");
                     assert!(chan != RESERVED_CHANNEL && chan != BROADCAST_CHANNEL, "Must not be broadcast");
                     self.state = ServerState::Busy { chan, decoder };
-                    return Ok(None)
+                    Ok(None)
                 }
             },
             Err(decode_err) => {
                 error!(?decode_err, "Decode error while parsing initialization packet");
-                return Err(decode_err.into())
+                Err(decode_err.into())
             },
-        };
+        }
     }
 
     fn handle_init(&mut self, message: &Message) -> HandlerResult {
@@ -174,13 +170,13 @@ impl ServerLogic {
                 error!("Could not allocate a channel, server full");
                 ServerError::Other { chan, reason: "Could not allocate a channel".into() }
             })?;
-            ret_msg.payload.extend_from_slice(&InitCommandResponse::new(msg.nonce, new_cid).as_bytes());
+            ret_msg.payload.extend_from_slice(InitCommandResponse::new(msg.nonce, new_cid).as_bytes());
             trace!(?new_cid, "Allocated new channel");
-            return Ok(Some(ret_msg));
+            Ok(Some(ret_msg))
         } else {
-            ret_msg.payload.extend_from_slice(&InitCommandResponse::new(msg.nonce, chan).as_bytes());
+            ret_msg.payload.extend_from_slice(InitCommandResponse::new(msg.nonce, chan).as_bytes());
             self.abort_transaction();
-            return Ok(Some(ret_msg));
+            Ok(Some(ret_msg))
         }
     }
 
@@ -190,15 +186,15 @@ impl ServerLogic {
         let command = message.command.map_err(|reason| MessageDecodeError::InvalidCommand { chan, reason })?;
         trace!("Processing message");
         match command {
-            CommandType::MSG => error!("TODO U2F message"),
-            CommandType::CBOR => error!("TODO CBOR"),
-            CommandType::INIT => return self.handle_init(message),
-            CommandType::PING => return Ok(Some(message.clone())),
-            CommandType::CANCEL => error!("TODO cancel"),
-            CommandType::ERROR => error!("Impossible - authenticator received an error message"),
-            CommandType::KEEPALIVE => error!("Impossible - authenticator received a keepalive message"),
-            CommandType::WINK => error!("TODO wink"),
-            CommandType::LOCK => error!("LOCK unsupported"),
+            CommandType::Msg => error!("TODO U2F message"),
+            CommandType::Cbor => error!("TODO CBOR"),
+            CommandType::Init => return self.handle_init(message),
+            CommandType::Ping => return Ok(Some(message.clone())),
+            CommandType::Cancel => error!("TODO cancel"),
+            CommandType::Error => error!("Impossible - authenticator received an error message"),
+            CommandType::Keepalive => error!("Impossible - authenticator received a keepalive message"),
+            CommandType::Wink => error!("TODO wink"),
+            CommandType::Lock => error!("LOCK unsupported"),
         }
         Err(MessageDecodeError::InvalidCommand { chan, reason: InvalidCommandType::InvalidCommand(command.into()) }
             .into())
@@ -222,21 +218,18 @@ impl ServerLogic {
         match (&mut self.state, packet) {
             (ServerState::Busy { chan, .. }, _) if new_chan != *chan => {
                 error!(?new_chan, cur_chan=chan, "Got packet from a conflicting channel");
-                return Err(ServerError::ChannelBusy { busy_chan: *chan, new_chan });
+                Err(ServerError::ChannelBusy { busy_chan: *chan, new_chan })
             },
             (ServerState::Busy { chan, decoder}, Packet::InitializationPacket(init)) => {
                 assert_eq!(new_chan, *chan, "Impossible");
-                if init.get_command_type() == Ok(CommandType::INIT) {
-                    self.abort_transaction();
-                    return Ok(None)
-                } else if init.get_command_type() ==  Ok(CommandType::CANCEL) {
+                if [Ok(CommandType::Init), Ok(CommandType::Cancel)].contains(&init.get_command_type()) {
                     // TODO: difference between abort and init
                     self.abort_transaction();
-                    return Ok(None)
+                    Ok(None)
                 }
                 else { 
                     error!(?decoder, "Received initialization packet that isn't INIT or CANCEL while busy, ignoring packet");
-                    return Err(ServerError::ChannelBusy { busy_chan: *chan, new_chan });
+                    Err(ServerError::ChannelBusy { busy_chan: *chan, new_chan })
                 }
             },
             (ServerState::Busy { chan, ref mut decoder}, Packet::ContinuationPacket(cont)) => {
@@ -244,30 +237,29 @@ impl ServerLogic {
                 match decoder.add_continuation_packet(&cont) {
                     Ok(()) if decoder.is_finished() => { 
                         let message = decoder.try_finish().unwrap();
-                        return self.process_message(&message);
+                        self.process_message(&message)
                     },
                     Ok(()) => {
                         trace!(?decoder, "Got a continuation packet, waiting for more");
-                        return Ok(None)
+                        Ok(None)
                     },
                     Err(error) => {
                         error!(?error, ?decoder, "Error while processing continuation packet, aborting transaction");
                         self.abort_transaction();
-                        return Err(error.into())
+                        Err(error.into())
                     },
                 }
 
             },
             (ServerState::Idle, Packet::ContinuationPacket(_)) => {
                 error!("Received a continuation packet while an initialization packet was expected");
-                return Err(MessageDecodeError::UnexpectedCont { chan: new_chan }.into());
+                Err(MessageDecodeError::UnexpectedCont { chan: new_chan }.into())
             },
             (ServerState::Idle, Packet::InitializationPacket(init)) => {
                 trace!("Received an initialization packet while idle, beginning new transaction");
-                return self.begin_transaction(&*init);
+                self.begin_transaction(&*init)
             }
-            _ => panic!("Impossible/missing branches")
-        };
+        }
     }
 
     

@@ -35,7 +35,7 @@ impl HIDTransport for LinuxUHIDTransport {
     fn receive_report(&mut self) -> Result<Vec<u8>, TransportError> {
         loop {
             let res = self.file.read_output_event()
-                .map_err(|e| anyhow::Error::new(e))?;
+                .map_err(anyhow::Error::new)?;
             match res {
                 OutputEvent::Output { mut data } => { 
                     // TODO: BUG: why do UHID output event come with an extra byte in the front?
