@@ -33,4 +33,4 @@ ciborium = "^0.2.0"
 uhid-virt = "^0.0.5"
 
 [patch.crates-io]
-uhid-virt = { path = "uhid-virt" }
+uhid-virt = { path = "uhid-virt-patched" }
