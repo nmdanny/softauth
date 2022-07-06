@@ -1,0 +1,24 @@
+[package]
+name = "uhid-virt"
+version = "0.0.4"
+authors = ["Luke Jones <luke@ljones.dev>", "Sameer Puri <purisame@spuri.io>", "Daniel Stiner <danstiner@gmail.com>"]
+edition = "2018"
+description = "Interface to Linux UHID (user-space HID transport drivers)"
+repository = "https://github.com/flukejones/uhid-virt"
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+keywords = ["hid", "uhid", "linux", "userspace", "transport"]
+categories = ["os", "os::unix-apis"]
+exclude = [
+    ".travis.yml",
+    "example/"
+]
+
+[lib]
+doc = true
+test = true
+
+[dependencies]
+uhidrs-sys = "1.0.0"
+enumflags2 = "^0.6.4"
+libc = "^0.2.0"
