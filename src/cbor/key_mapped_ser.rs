@@ -1,4 +1,7 @@
-use serde::{Serializer, ser::{SerializeStruct, SerializeMap}, Serialize};
+use serde::{
+    ser::{SerializeMap, SerializeStruct},
+    Serialize, Serializer,
+};
 
 use super::key_mapped::{Keymappable, KeymappedStruct};
 
