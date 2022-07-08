@@ -1,52 +1,116 @@
-use tracing::{error, debug};
-use uhid_virt::{UHIDWrite, UHIDRead, OutputEvent};
+use std::{pin::Pin, sync::Arc, task::Poll};
 
-use crate::hid::transport::{HIDTransport, TransportError};
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+use tracing::{debug, error};
+use uhid_virt::InputEvent;
+use uhid_virt::StreamError;
+use uhid_virt::UHID_EVENT_SIZE;
+use uhid_virt::{OutputEvent, UHIDRead, UHIDWrite};
+
+use crate::hid::{
+    packet::HID_REPORT_SIZE,
+    transport::{HIDTransport, TransportError},
+};
 
 use super::device::create_ctaphid_device;
 
 pub struct LinuxUHIDTransport {
-    file: std::fs::File
+    recv_read: UnboundedReceiver<Result<Vec<u8>, TransportError>>,
+    send_write: UnboundedSender<Vec<u8>>,
 }
 
 impl LinuxUHIDTransport {
-    pub fn new() -> std::io::Result<Self> {
-        let file = create_ctaphid_device()?;
-        Ok(Self { file })
-    }
-}
-
-impl Drop for LinuxUHIDTransport {
-    fn drop(&mut self) {
-        if let Err(e) =  self.file.write_destroy_event() {
-            error!("Couldn't write UHID destroy event for linux UHID file: {:?}", e);
-            return;
-        }
-        debug!("UHID destroy event written");
-    }
-}
-
-impl HIDTransport for LinuxUHIDTransport {
-    fn send_report(&mut self, data: &[u8]) -> Result<(), TransportError> {
-        self.file.write_input_event(data)
-            .map_err(TransportError::IoError)
-    }
-
-    fn receive_report(&mut self) -> Result<Vec<u8>, TransportError> {
-        loop {
-            let res = self.file.read_output_event()
-                .map_err(anyhow::Error::new)?;
-            match res {
-                OutputEvent::Output { mut data } => { 
-                    // TODO: BUG: why do UHID output event come with an extra byte in the front?
-                    data.remove(0);    
-                    return Ok(data) 
-                },
-                event => {
-                    debug!(?event, "Got an OutputEvent which isn't Output, ignoring.");
+    pub async fn new() -> anyhow::Result<Self> {
+        let (send_read, recv_read) = unbounded_channel::<Result<Vec<u8>, TransportError>>();
+        let (send_write, mut recv_write) = unbounded_channel::<Vec<u8>>();
+        let mut file_rh = create_ctaphid_device()?;
+        let mut file_wh = file_rh.try_clone()?;
+        let read_jh = tokio::task::spawn_blocking(move || {
+            loop {
+                let event = file_rh
+                    .read_output_event();
+                match event {
+                    Ok(OutputEvent::Output { mut data }) => {
+                        // TODO: BUG: why do UHID output event come with an extra byte in the front?
+                        data.remove(0);
+                        if let Err(e) = send_read.send(Ok(data)) {
+                            error!("UHID reader is closing due to send error: {:?}", e);
+                            break;
+                        }
+                    }
+                    Ok(event) => {
+                        debug!(?event, "Got an OutputEvent which isn't Output, ignoring.");
+                    },
+                    Err(StreamError::Io(e)) => {
+                        send_read.send(Err(TransportError::IoError(e)))
+                            .unwrap_or_else(|_| error!("Couldn't send IO error to server"));
+                        break;
+                    },
+                    Err(StreamError::UnknownEventType(e)) => {
+                        error!("Received event of unknown type '{}', ignoring", e);
+                    }
                 }
             }
-        }
-
+        });
+        let write_jh = tokio::task::spawn_blocking(move || {
+            while let Some(data) = recv_write.blocking_recv() {
+                assert_eq!(data.len(), HID_REPORT_SIZE as usize, "Payload must fit HID Report size");
+                file_wh
+                    .write_input_event(&data)
+                    .expect("Write task couldn't write input event");
+            }
+            file_wh
+                .write_destroy_event()
+                .expect("Write task couldn't write destroy event");
+        });
+        Ok(Self {
+            recv_read,
+            send_write,
+        })
     }
 }
+
+impl futures::Stream for LinuxUHIDTransport {
+    type Item = Result<Vec<u8>, TransportError>;
+
+    fn poll_next(
+        mut self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        self.recv_read.poll_recv(cx)
+    }
+}
+
+impl futures::Sink<Vec<u8>> for LinuxUHIDTransport {
+    type Error = TransportError;
+
+    fn poll_ready(
+        self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn start_send(self: Pin<&mut Self>, item: Vec<u8>) -> Result<(), Self::Error> {
+        self.send_write.send(item).map_err(|_| {
+            TransportError::OtherError(anyhow::anyhow!("Couldn't queue message to be sent"))
+        })?;
+        Ok(())
+    }
+
+    fn poll_flush(
+        self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn poll_close(
+        self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+}
+
+impl HIDTransport for LinuxUHIDTransport {}

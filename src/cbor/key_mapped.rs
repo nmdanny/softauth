@@ -77,6 +77,12 @@ impl<U: Serialize + Eq + Hash + Clone, T: VecKeymappable<U>> Keymappable<U> for 
     }
 }
 
+impl <U: Serialize + Eq + Hash + Clone> VecKeymappable<U> for () {
+    fn field_mappings() -> Vec<(&'static str, U)> {
+        vec![]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{KeymappedStruct, VecKeymappable};

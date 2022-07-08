@@ -6,15 +6,17 @@ mod cbor;
 use tracing::{info, debug};
 
 
-use crate::hid::{server::CTAPServer, linux::uhid_transport::LinuxUHIDTransport};
+use crate::{hid::{server::CTAPServer, linux::uhid_transport::LinuxUHIDTransport}, authenticator::api::CTAP2Service};
 
-fn main() -> anyhow::Result<()> {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
     info!("Creating UHID transport");
-    let transport = LinuxUHIDTransport::new()?;
+    let transport = LinuxUHIDTransport::new().await?;
     debug!("Created UHID transport");
+    let authenticator = CTAP2Service::new();
     let mut server = CTAPServer::new(transport);
-    server.run()?;
+    server.run(authenticator).await?;
     Ok(())
 }

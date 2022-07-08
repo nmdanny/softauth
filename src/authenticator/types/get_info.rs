@@ -2,6 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::cbor::key_mapped::VecKeymappable;
+
 /// https://www.w3.org/TR/webauthn-2/#aaguid
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Aaguid([u8; 16]);
@@ -37,5 +39,16 @@ impl Default for AuthenticatorGetInfoResponse {
             aaguid: APP_AAGUID,
             options: Default::default(),
         }
+    }
+}
+
+impl VecKeymappable<u8> for AuthenticatorGetInfoResponse {
+    fn field_mappings() -> Vec<(&'static str, u8)> {
+        vec![
+            ("versions", 0x01),
+            ("extensions", 0x02),
+            ("aaguid", 0x03),
+            ("options", 0x04)
+        ]
     }
 }

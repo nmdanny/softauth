@@ -25,6 +25,10 @@ tokio = { version = "~1.18.1", features = ["full"] }
 tokio-util = { verison = "^0.7.1", features = ["full"] }
 crossbeam = "0.8"
 
+# Tower
+tower = { version = "^0.4.13", features = ["full"] }
+tokio-tower = "0.7.0-rc2"
+
 # serialization
 serde = { version = "1.0", features = ["derive"] }
 ciborium = "^0.2.0"
