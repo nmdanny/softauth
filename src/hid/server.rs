@@ -1,11 +1,10 @@
-use anyhow::anyhow;
 use bytes::BytesMut;
 use thiserror::Error;
 use tokio::sync::mpsc::UnboundedSender;
 use futures::{StreamExt, SinkExt};
 use tower::Service;
 use tracing::{debug_span, error, trace, warn};
-use super::{packet_processing::{PacketProcessing, PacketProcessingResult}, command::CommandType};
+use super::{packet_processing::{PacketProcessing, PacketProcessingResult}};
 
 use crate::{
     authenticator::{api::{CTAP2Request, CTAP2Response, AuthenticatorError}, transport::CTAP2ServerTransport},
@@ -98,23 +97,35 @@ where
     /// Runs forever, processing CTAP-HID packets. May return early in case of a transport errors.
     pub async fn run<A>(&mut self, service: A) -> anyhow::Result<()>
     where A: Service<CTAP2Request, Response = CTAP2Response, Error = AuthenticatorError> + Send + 'static,
-          A::Future: Send + 'static
+          A::Future: 'static
     {
         let (ctap2_transport, req_send, mut res_recv) = CTAP2ServerTransport::new();
         let server = tokio_tower::pipeline::Server::new(ctap2_transport, service);
-        let jh = tokio::spawn(server);
+        let ls = tokio::task::LocalSet::new();
+        let mut server_jh = ls.spawn_local(server);
 
-
-        loop {
+        ls.run_until(async move {
+            loop {
             tokio::select! {
+                server_res = &mut server_jh => {
+                    match server_res {
+                        Ok(Ok(())) => return Ok(()),
+                        Ok(Err(e)) => {
+                            error!("There was an error in the CTAP2 server requiring it to shut down: {:?}", e);
+                            return Err(e.into());
+                        }
+                        Err(e) => { 
+                            error!("There was a panic in the CTAP2 server requiring it to shut down: {:?}", e);
+                            return Err(e.into()) 
+                        },
+                    }
+                }
                 res = res_recv.recv() => {
+                    let span = debug_span!("CTAP2 Response");
+                    let _enter = span.enter();
                     if let Some(res) = res {
                         trace!(?res, "Writing CTAP2 Response message");
-                        self.write_message(Message {
-                            channel_identifier: res.channel_identifier,
-                            command: Ok(CommandType::Cbor),
-                            payload: res.data.into()
-                        }).await?;
+                        self.write_message(res.into()).await?;
                     } else {
                         return Ok(())
                     }
@@ -128,7 +139,8 @@ where
                     }
                 },
             };
-        }
+            }
+        }).await
     }
 
     async fn handle_report(&mut self, req_send: &UnboundedSender<CTAP2Request>, report: Vec<u8>) -> anyhow::Result<()> {
@@ -178,6 +190,7 @@ where
         for chunk in buf.chunks_exact(HID_REPORT_SIZE as usize) {
             self.transport.send(chunk.to_owned()).await?;
         }
+        trace!("Sent message");
         Ok(())
     }
 }

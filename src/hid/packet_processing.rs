@@ -1,4 +1,4 @@
-use tracing::{warn, trace, error, instrument};
+use tracing::{warn, trace, error, instrument, debug_span};
 use zerocopy::{LayoutVerified, AsBytes};
 
 use crate::hid::{channel::{BROADCAST_CHANNEL, RESERVED_CHANNEL}, server::ServerError, command::{InitCommandResponse, CommandType, InvalidCommandType}};
@@ -143,6 +143,8 @@ impl PacketProcessing {
         let command = message
             .command
             .map_err(|reason| MessageDecodeError::InvalidCommand { chan, reason })?;
+        let span = debug_span!("Message", ?command);
+        let _enter = span.enter();
         trace!(?command, "Processing message");
         match command {
             CommandType::Msg => error!("TODO U2F message"),
