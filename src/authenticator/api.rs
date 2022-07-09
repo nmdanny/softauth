@@ -1,25 +1,58 @@
 use std::{pin::Pin, task::Poll, sync::Arc};
 
 use futures::Future;
+use serde::Deserialize;
 use tokio::sync::Mutex;
 use thiserror::Error;
 use tower::Service;
 use tracing::trace;
 
-use crate::{hid::{packet::Message, command::CommandType}, cbor::{key_mapped::KeymappedStruct, ordered_ser::make_ordered}};
+use crate::{hid::{packet::Message, command::CommandType}, cbor::{key_mapped::{KeymappedStruct, Keymappable}, ordered_ser::make_ordered}};
 
-use super::{command::{StatusCode, CTAPCommand}, types::AuthenticatorGetInfoResponse};
+use super::{command::{StatusCode, CTAPCommand}, types::{AuthenticatorGetInfoResponse, AuthenticatorMakeCredentialParams, AuthenticatorMakeCredentialResponse}, auth_impl::CTAP2ServiceImpl};
+
+
 
 #[derive(Error, Debug)]
 pub enum AuthenticatorError {
     #[error(transparent)]
     CTAPErrorStatus(#[from] StatusCode),
 
-    #[error("Cannot send CTAP response as HID server is closed")]
-    ResponseSinkClosed,
+    #[error("Deserialization error: {0}")]
+    DeserializationError(ciborium::de::Error<std::io::Error>),
 
-    #[error("Cannot receive CTAP requests as HID server is closed")]
-    RequestSinkClosed
+    #[error("Cannot send response (response sink is closed)")]
+    CannotSendResponse
+
+}
+
+/// Error message type retuned from the Service
+#[derive(Error, Debug)]
+#[error("Authenticator error on channel {channel_identifier}: {inner}")]
+pub struct AuthServiceError {
+    #[source]
+    inner: AuthenticatorError,
+    channel_identifier: u32,
+}
+
+impl AuthServiceError {
+    pub fn new(inner: AuthenticatorError, channel_identifier: u32) -> Self {
+        Self { inner, channel_identifier }
+    }
+}
+
+impl From<&AuthServiceError> for Message {
+    fn from(err: &AuthServiceError) -> Self {
+        let status_code = match err.inner {
+            AuthenticatorError::CTAPErrorStatus(status) => status,
+            AuthenticatorError::DeserializationError(_) => StatusCode::Ctap2ErrInvalidCbor,
+            AuthenticatorError::CannotSendResponse => StatusCode::Ctap1ErrOther,
+        };
+        Message { 
+            channel_identifier:err.channel_identifier, 
+            command: Ok(CommandType::Cbor), 
+            payload: vec![status_code as u8] }
+    }
 }
 
 #[derive(Debug)]
@@ -31,6 +64,7 @@ pub struct CTAP2Request {
 #[derive(Debug)]
 pub enum CTAP2Command {
     GetInfo,
+    MakeCredential(AuthenticatorMakeCredentialParams),
     Reset
 }
 
@@ -40,7 +74,11 @@ impl CTAP2Command {
             .map_err(|_| StatusCode::Ctap1ErrInvalidCommand)?;
         
         Ok(match cmd {
-            CTAPCommand::MakeCredential => todo!(),
+            CTAPCommand::MakeCredential => {
+                let data: KeymappedStruct<_, u8> = ciborium::de::from_reader(payload)
+                    .map_err(AuthenticatorError::DeserializationError)?;
+                CTAP2Command::MakeCredential(data.into_inner())
+            },
             CTAPCommand::GetAssertion => todo!(),
             CTAPCommand::GetNextAssertion => todo!(),
             CTAPCommand::GetInfo => CTAP2Command::GetInfo,
@@ -89,21 +127,26 @@ impl From<CTAP2Response> for Message {
 #[derive(Debug)]
 pub enum CTAP2ResponseData {
     GetInfo(AuthenticatorGetInfoResponse),
+    MakeCredential(AuthenticatorMakeCredentialResponse),
     ResetOK
 }
 
 impl From<CTAP2ResponseData> for Vec<u8> {
     fn from(data: CTAP2ResponseData) -> Self {
         let mut buf = vec![StatusCode::Ctap1ErrSuccess as u8];
-        match data {
+        let mut value = match data {
             CTAP2ResponseData::GetInfo(res) => {
                 let km = KeymappedStruct::from(res);
-                let mut value = ciborium::value::Value::serialized(&km).unwrap();
-                make_ordered(&mut value);
-                ciborium::ser::into_writer(&value, &mut buf).unwrap();
+                ciborium::value::Value::serialized(&km).unwrap()
             },
-            CTAP2ResponseData::ResetOK => {}
-        }
+            CTAP2ResponseData::MakeCredential(res) => {
+                let km = KeymappedStruct::from(res);
+                ciborium::value::Value::serialized(&km).unwrap()
+            },
+            CTAP2ResponseData::ResetOK => { return buf }
+        };
+        make_ordered(&mut value);
+        ciborium::ser::into_writer(&value, &mut buf).unwrap();
         trace!("CTAP2 Response CBOR bytes: {}", hex::encode(&buf[1..]));
         buf
     }
@@ -118,7 +161,7 @@ pub struct CTAP2Service {
 impl Service<CTAP2Request> for CTAP2Service {
     type Response = CTAP2Response;
 
-    type Error = AuthenticatorError;
+    type Error = AuthServiceError;
 
     type Future = Pin<Box<dyn 'static + Future<Output = Result<Self::Response, Self::Error>>>>;
 
@@ -131,7 +174,10 @@ impl Service<CTAP2Request> for CTAP2Service {
         Box::pin(async move {
             let channel_identifier = req.channel_identifier;
             let mut imp = imp.lock().await;
-            let data = imp.handle_command(req.command).await?;
+            let data = imp.handle_command(req.command).await
+                .map_err(|inner| AuthServiceError {
+                    inner, channel_identifier
+                })?;
             Ok(CTAP2Response { data, channel_identifier })
         })
     }
@@ -144,27 +190,4 @@ impl CTAP2Service {
         CTAP2Service { imp: Arc::new(Mutex::new(CTAP2ServiceImpl::new())) }
     }
 
-}
-
-struct CTAP2ServiceImpl {}
-
-impl CTAP2ServiceImpl {
-    pub fn new() -> Self {
-        Self {}
-    }
-
-    pub async fn handle_command(&mut self, command: CTAP2Command) -> Result<CTAP2ResponseData, AuthenticatorError> {
-        match command {
-            CTAP2Command::GetInfo => Ok(CTAP2ResponseData::GetInfo(AuthenticatorGetInfoResponse::default())),
-            CTAP2Command::Reset => {
-                self.reset_device().await
-            }
-        }
-
-    }
-
-    pub async fn reset_device(&mut self) -> Result<CTAP2ResponseData, AuthenticatorError> {
-        // TODO: resetting a device
-        Ok(CTAP2ResponseData::ResetOK)
-    }
 }

@@ -22,7 +22,7 @@ impl futures::sink::Sink<CTAP2Response> for CTAP2ServerTransport {
     fn start_send(self: std::pin::Pin<&mut Self>, item: CTAP2Response) -> Result<(), Self::Error> {
         self.send_res
             .send(item)
-            .map_err(|_| AuthenticatorError::ResponseSinkClosed)?;
+            .map_err(|_| AuthenticatorError::CannotSendResponse)?;
         Ok(())
     }
 

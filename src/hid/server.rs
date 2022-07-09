@@ -7,7 +7,7 @@ use tracing::{debug_span, error, trace, warn};
 use super::{packet_processing::{PacketProcessing, PacketProcessingResult}};
 
 use crate::{
-    authenticator::{api::{CTAP2Request, CTAP2Response, AuthenticatorError}, transport::CTAP2ServerTransport},
+    authenticator::{api::{CTAP2Request, CTAP2Response, AuthServiceError}, transport::CTAP2ServerTransport},
 };
 
 use super::{
@@ -96,7 +96,7 @@ where
 
     /// Runs forever, processing CTAP-HID packets. May return early in case of a transport errors.
     pub async fn run<A>(&mut self, service: A) -> anyhow::Result<()>
-    where A: Service<CTAP2Request, Response = CTAP2Response, Error = AuthenticatorError> + Send + 'static,
+    where A: Service<CTAP2Request, Response = CTAP2Response, Error = AuthServiceError> + Send + 'static,
           A::Future: 'static
     {
         let (ctap2_transport, req_send, mut res_recv) = CTAP2ServerTransport::new();
@@ -163,9 +163,12 @@ where
                     } 
                     Err(auth_err) => { 
                         match auth_err {
-                            AuthenticatorError::CTAPErrorStatus(_) => todo!(),
-                            AuthenticatorError::ResponseSinkClosed => todo!(),
-                            AuthenticatorError::RequestSinkClosed => todo!(),
+                            e => {
+                                error!("Error deserializing CBOR request: {:?}, bytes: {}", 
+                                        e, hex::encode(&message.payload[1..]));
+                                let err_msg = Message::from(&AuthServiceError::new(e, message.channel_identifier));
+                                self.write_message(err_msg).await?;
+                            }
                         }
                     },
                 };
