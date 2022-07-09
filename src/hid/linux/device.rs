@@ -31,11 +31,13 @@ pub fn create_ctaphid_device() -> io::Result<File> {
         name: "Software CTAP2".to_owned(),
         phys: "Phys".to_owned(),
         uniq: "Uniq".to_owned(),
-        bus: Bus::USB,
-        vendor: 0,
-        product: 0,
-        country: 0,
-        version: 0,
+        // TODO: somehow Bus::USB is ignored by hidapi 'hid_enumerate' (used by google ctap2 test tool), 
+        // but Bluetooth works
+        bus: Bus::BLUETOOTH,
+        vendor: 1337,
+        product: 1337,
+        country: 1337,
+        version: 1,
         rd_data: CTAP_REPORT_DESCRIPTOR.to_owned(),
     };
     create_uhid_device_file(params, None)
