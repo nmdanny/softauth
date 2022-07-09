@@ -79,16 +79,19 @@ pub enum CTAP2ResponseData {
     GetInfo(AuthenticatorGetInfoResponse)
 }
 
-impl Into<Vec<u8>> for CTAP2ResponseData {
-
-    fn into(self) -> Vec<u8> {
-        let mut buf = Vec::new();
-        match self {
+impl From<CTAP2ResponseData> for Vec<u8> {
+    fn from(data: CTAP2ResponseData) -> Self {
+        let mut buf = vec![StatusCode::Ctap1ErrSuccess as u8];
+        match data {
             CTAP2ResponseData::GetInfo(res) => {
                 let km = KeymappedStruct::from(res);
-                ciborium::ser::into_writer(&km, &mut buf).unwrap();
+                let mut value = ciborium::value::Value::serialized(&km).unwrap();
+                make_ordered(&mut value);
+                ciborium::ser::into_writer(&value, &mut buf).unwrap();
             },
+            CTAP2ResponseData::ResetOK => {}
         }
+        trace!("CTAP2 Response CBOR bytes: {}", hex::encode(&buf[1..]));
         buf
     }
 }
