@@ -15,6 +15,7 @@ zerocopy = "^0.6.1"
 num_enum = "^0.5.7"
 once_cell = "1.12.0"
 hex = "0.4.3"
+modular-bitfield = "0.11.2"
 # Logging
 tracing = "^0.1.34"
 tracing-subscriber = "^0.3.11"
@@ -23,6 +24,7 @@ tracing-subscriber = "^0.3.11"
 futures = "^0.3.21"
 tokio = { version = "~1.18.1", features = ["full"] }
 tokio-util = { verison = "^0.7.1", features = ["full"] }
+async-trait = "0.1.56"
 crossbeam = "0.8"
 
 # Tower

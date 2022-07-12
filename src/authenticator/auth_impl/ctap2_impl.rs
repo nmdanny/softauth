@@ -11,7 +11,7 @@ impl CTAP2ServiceImpl {
     pub async fn handle_command(&mut self, command: CTAP2Command) -> Result<CTAP2ResponseData, AuthenticatorError> {
         match command {
             CTAP2Command::GetInfo => Ok(CTAP2ResponseData::GetInfo(AuthenticatorGetInfoResponse::default())),
-            CTAP2Command::MakeCredential(params) => self.handle_make_credential(params).await,
+            CTAP2Command::MakeCredential(params) => self.handle_make_credential(*params).await,
             CTAP2Command::Reset => {
                 self.reset_device().await
             }

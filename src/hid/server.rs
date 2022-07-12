@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use bytes::BytesMut;
 use thiserror::Error;
 use tokio::sync::mpsc::UnboundedSender;
@@ -7,7 +8,7 @@ use tracing::{debug_span, error, trace, warn};
 use super::{packet_processing::{PacketProcessing, PacketProcessingResult}};
 
 use crate::{
-    authenticator::{api::{CTAP2Request, CTAP2Response, AuthServiceError}, transport::CTAP2ServerTransport},
+    authenticator::{api::{CTAP2Request, CTAP2Response, AuthServiceError, AuthenticatorError}, transport::CTAP2ServerTransport},
 };
 
 use super::{
@@ -159,17 +160,14 @@ where
                 let ctap_req = CTAP2Request::try_from(&message);
                 match ctap_req {
                     Ok(req) => {
-                        req_send.send(req).expect("CTAP2 service crashed, couldn't send request");
+                        req_send.send(req).map_err(|_| anyhow!("CTAP2 service crashe,d can't send request"))?;
                     } 
                     Err(auth_err) => { 
-                        match auth_err {
-                            e => {
-                                error!("Error deserializing CBOR request: {:?}, bytes: {}", 
-                                        e, hex::encode(&message.payload[1..]));
-                                let err_msg = Message::from(&AuthServiceError::new(e, message.channel_identifier));
-                                self.write_message(err_msg).await?;
-                            }
-                        }
+                        assert!(matches!(auth_err, AuthenticatorError::DeserializationError(_)));
+                        error!("Error deserializing CBOR request: {:?}, bytes: {}", 
+                                auth_err, hex::encode(&message.payload[1..]));
+                        let err_msg = Message::from(&AuthServiceError::new(auth_err, message.channel_identifier));
+                        self.write_message(err_msg).await?;
                     },
                 };
             },

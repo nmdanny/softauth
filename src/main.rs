@@ -18,5 +18,6 @@ async fn main() -> anyhow::Result<()> {
     let authenticator = CTAP2Service::new();
     let mut server = CTAPServer::new(transport);
     server.run(authenticator).await?;
+    info!("Daemon is stopping");
     Ok(())
 }

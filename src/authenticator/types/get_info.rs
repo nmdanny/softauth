@@ -8,7 +8,7 @@ pub struct Aaguid(
     #[serde(with = "serde_bytes_array")]
     [u8; 16]);
 
-const APP_AAGUID: Aaguid = Aaguid([1, 3, 3, 7, 1, 1, 2, 3, 5, 8, 13, 21, 1, 3, 3, 7]);
+pub const APP_AAGUID: Aaguid = Aaguid([1, 3, 3, 7, 1, 1, 2, 3, 5, 8, 13, 21, 1, 3, 3, 7]);
 
 /// https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-20210615.html#option-id
 #[derive(Debug, Clone, Serialize, Deserialize)]

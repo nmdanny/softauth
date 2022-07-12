@@ -64,7 +64,7 @@ pub struct CTAP2Request {
 #[derive(Debug)]
 pub enum CTAP2Command {
     GetInfo,
-    MakeCredential(AuthenticatorMakeCredentialParams),
+    MakeCredential(Box<AuthenticatorMakeCredentialParams>),
     Reset
 }
 
@@ -77,7 +77,7 @@ impl CTAP2Command {
             CTAPCommand::MakeCredential => {
                 let data: KeymappedStruct<_, u8> = ciborium::de::from_reader(payload)
                     .map_err(AuthenticatorError::DeserializationError)?;
-                CTAP2Command::MakeCredential(data.into_inner())
+                CTAP2Command::MakeCredential(Box::new(data.into_inner()))
             },
             CTAPCommand::GetAssertion => todo!(),
             CTAPCommand::GetNextAssertion => todo!(),

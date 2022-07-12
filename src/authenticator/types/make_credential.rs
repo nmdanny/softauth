@@ -2,17 +2,15 @@ use std::collections::BTreeMap;
 
 use serde::{Serialize, Deserialize};
 
-use crate::cbor::{key_mapped::VecKeymappable};
+use crate::{cbor::{key_mapped::VecKeymappable}, authenticator::crypto::COSEAlgorithmIdentifier};
 
-/// https://w3c.github.io/webauthn/#rp-id
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct RpId(String);
+use super::{RpId, CredentialId, UserHandle, PublicKeyType, AttestationStatement, AuthenticatorData};
 
-/// https://w3c.github.io/webauthn/#credential-id
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct CredentialId(Vec<u8>);
 
-/// https://w3c.github.io/webauthn/#dictdef-publickeycredentialrpentity
+
+
+/// Used when creating a credential, contains attributes related to the RP.
+/// [See more](https://w3c.github.io/webauthn/#dictdef-publickeycredentialrpentity)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PublicKeyCredentialRpEntity {
     id: RpId,
@@ -20,39 +18,35 @@ pub struct PublicKeyCredentialRpEntity {
 }
 
 
-/// https://w3c.github.io/webauthn/#dom-publickeycredentialuserentity-id
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct UserId(#[serde(with = "serde_bytes")] Vec<u8>);
-
-/// https://w3c.github.io/webauthn/#dictdef-publickeycredentialuserentity
+/// Used when creating a credential, contains attributes related to the user account.
+/// [See more](https://w3c.github.io/webauthn/#dictdef-publickeycredentialuserentity)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PublicKeyCredentialUserEntity {
-    id: UserId,
+    id: UserHandle,
     name: Option<String>,
 
     #[serde(rename = "displayName")]
     display_name: Option<String>
 }
 
-/// https://w3c.github.io/webauthn/#typedefdef-cosealgorithmidentifier
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct COSEAlgorithmIdentifier(i32);
 
 
-/// https://w3c.github.io/webauthn/#dictdef-publickeycredentialparameters
+/// Identifies a crypto algorithm supported by the RP.
+/// [See more](https://w3c.github.io/webauthn/#dictdef-publickeycredentialparameters)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PublicKeyCredentialParameters {
     #[serde(rename = "type")]
-    _type: String,
+    _type: PublicKeyType,
     alg: COSEAlgorithmIdentifier
 
 }
 
-/// https://w3c.github.io/webauthn/#dictdef-publickeycredentialdescriptor
+/// Identifies a credential (similar to [CredentialId]) along with the transports it can be used on.
+/// [See more](https://w3c.github.io/webauthn/#dictdef-publickeycredentialdescriptor)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PublicKeyCredentialDescriptor {
     #[serde(rename = "type")]
-    _type: String,
+    _type: PublicKeyType,
     id: CredentialId,
     transports: Option<Vec<String>>
 }
@@ -116,14 +110,7 @@ impl VecKeymappable<u8> for AuthenticatorMakeCredentialParams {
     }
 }
 
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct AuthenticatorData;
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct AttestationStatement;
-
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize)]
 pub struct AuthenticatorMakeCredentialResponse {
     fmt: String,
     auth_data: AuthenticatorData,
