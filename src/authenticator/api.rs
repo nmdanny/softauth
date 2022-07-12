@@ -1,17 +1,14 @@
 use std::{pin::Pin, sync::Arc, task::Poll};
 
 use futures::Future;
-use serde::Deserialize;
+
 use thiserror::Error;
 use tokio::sync::Mutex;
 use tower::Service;
 use tracing::trace;
 
 use crate::{
-    cbor::{
-        key_mapped::{Keymappable, KeymappedStruct},
-        ordered_ser::make_ordered,
-    },
+    cbor::{key_mapped::KeymappedStruct, ordered_ser::make_ordered},
     hid::{command::CommandType, packet::Message},
 };
 

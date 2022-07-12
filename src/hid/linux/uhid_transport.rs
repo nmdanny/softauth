@@ -1,10 +1,10 @@
-use std::{pin::Pin, sync::Arc, task::Poll};
+use std::{pin::Pin, task::Poll};
 
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tracing::{debug, error};
-use uhid_virt::InputEvent;
+
 use uhid_virt::StreamError;
-use uhid_virt::UHID_EVENT_SIZE;
+
 use uhid_virt::{OutputEvent, UHIDRead, UHIDWrite};
 
 use crate::hid::{
@@ -25,7 +25,7 @@ impl LinuxUHIDTransport {
         let (send_write, mut recv_write) = unbounded_channel::<Vec<u8>>();
         let mut file_rh = create_ctaphid_device()?;
         let mut file_wh = file_rh.try_clone()?;
-        let read_jh = tokio::task::spawn_blocking(move || {
+        let _read_jh = tokio::task::spawn_blocking(move || {
             loop {
                 let event = file_rh.read_output_event();
                 match event {
@@ -52,7 +52,7 @@ impl LinuxUHIDTransport {
                 }
             }
         });
-        let write_jh = tokio::task::spawn_blocking(move || {
+        let _write_jh = tokio::task::spawn_blocking(move || {
             while let Some(data) = recv_write.blocking_recv() {
                 assert_eq!(
                     data.len(),
@@ -90,7 +90,7 @@ impl futures::Sink<Vec<u8>> for LinuxUHIDTransport {
 
     fn poll_ready(
         self: Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
+        _cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
     }
@@ -104,14 +104,14 @@ impl futures::Sink<Vec<u8>> for LinuxUHIDTransport {
 
     fn poll_flush(
         self: Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
+        _cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
     }
 
     fn poll_close(
         self: Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
+        _cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
     }

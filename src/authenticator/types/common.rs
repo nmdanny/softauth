@@ -85,7 +85,9 @@ impl Serialize for AuthenticatorData {
     }
 }
 
-#[bitfield]
+#[allow(dead_code)]
+#[bitfield(bits = 8)]
+#[repr(u8)]
 #[derive(Debug, Serialize, Deserialize)]
 /// [See more](https://www.w3.org/TR/webauthn/#authenticator-data)
 pub struct AuthenticatorDataFlags {

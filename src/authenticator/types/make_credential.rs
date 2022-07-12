@@ -113,7 +113,7 @@ impl VecKeymappable<u8> for AuthenticatorMakeCredentialResponse {
 
 #[cfg(test)]
 mod tests {
-    use crate::cbor::key_mapped::{KeymappedStruct, VecKeymappable};
+    use crate::cbor::key_mapped::KeymappedStruct;
 
     use super::AuthenticatorMakeCredentialParams;
 

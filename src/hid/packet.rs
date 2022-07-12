@@ -186,6 +186,7 @@ impl ChannelParseState {
     }
 }
 
+#[allow(dead_code)] // TODO: decide whether to use tokio framing or my custom packet_processing
 /// Responsible for decoding HID packets. Packets might arrive from multiple
 /// channels and will be parsed independently of each other(no channel locking is required yet),
 /// but are assumed to arrive in-order within each channel.
@@ -195,6 +196,7 @@ pub struct MessageDecoder {
 }
 
 impl MessageDecoder {
+    #[allow(dead_code)]
     pub fn new() -> Self {
         MessageDecoder {
             chan_packets: HashMap::new(),
@@ -266,6 +268,7 @@ impl From<MessageDecodeError> for Message {
 }
 
 impl MessageDecoder {
+    #[allow(dead_code)]
     /// Resets a channel's parse state, must be invoked after encountering a decode error belonging to a channel.
     pub fn reset_channel(&mut self, chan: u32) {
         self.chan_packets.remove(&chan);

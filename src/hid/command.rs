@@ -95,7 +95,6 @@ pub struct InitCommandResponse {
     pub capabilities_flag: u8,
 }
 
-const CAPABILITY_WINK: u8 = 0x01;
 const CAPABILITY_CBOR: u8 = 0x04;
 const CAPABILITY_NMSG: u8 = 0x08;
 

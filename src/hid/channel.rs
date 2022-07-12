@@ -26,8 +26,4 @@ impl ChannelAllocator {
         }
         None
     }
-
-    pub fn free(&mut self, chan: u32) {
-        self.used.remove(&chan);
-    }
 }

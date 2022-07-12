@@ -1,6 +1,6 @@
 #[allow(unused)]
 use super::packet::HID_REPORT_SIZE;
-use futures::{Future, Sink, Stream};
+use futures::{Sink, Stream};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
