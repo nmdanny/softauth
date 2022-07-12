@@ -1,7 +1,7 @@
-use futures::{Future, Stream, Sink};
-use thiserror::Error;
 #[allow(unused)]
 use super::packet::HID_REPORT_SIZE;
+use futures::{Sink, Stream};
+use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum TransportError {
@@ -14,6 +14,7 @@ pub enum TransportError {
 
 /// A HID transport is a sink and stream of CTAP HID input/output reports respectively, each
 /// with a fixed size of [HID_REPORT_SIZE] bytes.
-pub trait HIDTransport : Sink<Vec<u8>, Error = TransportError> + Stream<Item = Result<Vec<u8>, TransportError>>
+pub trait HIDTransport:
+    Sink<Vec<u8>, Error = TransportError> + Stream<Item = Result<Vec<u8>, TransportError>>
 {
 }

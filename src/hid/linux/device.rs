@@ -1,12 +1,11 @@
 use std::fs::File;
 
 use std::io;
-use uhid_virt::{Bus, CreateParams, create_uhid_device_file};
+use uhid_virt::{create_uhid_device_file, Bus, CreateParams};
 
 use crate::hid::packet::HID_REPORT_SIZE;
 
-
-
+#[rustfmt::skip]
 static CTAP_REPORT_DESCRIPTOR: &[u8] = &[
     0x06, 0xD0, 0xF1, // HID_UsagePage ( FIDO_USAGE_PAGE ),
     0x09, 0x01, // HID_Usage ( FIDO_USAGE_CTAPHID ),
@@ -31,7 +30,7 @@ pub fn create_ctaphid_device() -> io::Result<File> {
         name: "Software CTAP2".to_owned(),
         phys: "Phys".to_owned(),
         uniq: "Uniq".to_owned(),
-        // TODO: somehow Bus::USB is ignored by hidapi 'hid_enumerate' (used by google ctap2 test tool), 
+        // TODO: somehow Bus::USB is ignored by hidapi 'hid_enumerate' (used by google ctap2 test tool),
         // but Bluetooth works
         bus: Bus::BLUETOOTH,
         vendor: 1337,

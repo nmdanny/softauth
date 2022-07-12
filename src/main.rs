@@ -1,12 +1,13 @@
-mod hid;
 mod authenticator;
 mod cbor;
+mod hid;
 
+use tracing::{debug, info};
 
-use tracing::{info, debug};
-
-
-use crate::{hid::{server::CTAPServer, linux::uhid_transport::LinuxUHIDTransport}, authenticator::api::CTAP2Service};
+use crate::{
+    authenticator::api::CTAP2Service,
+    hid::{linux::uhid_transport::LinuxUHIDTransport, server::CTAPServer},
+};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

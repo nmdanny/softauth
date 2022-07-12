@@ -1,10 +1,10 @@
-use std::{pin::Pin, sync::Arc, task::Poll};
+use std::{pin::Pin, task::Poll};
 
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tracing::{debug, error};
-use uhid_virt::InputEvent;
+
 use uhid_virt::StreamError;
-use uhid_virt::UHID_EVENT_SIZE;
+
 use uhid_virt::{OutputEvent, UHIDRead, UHIDWrite};
 
 use crate::hid::{
@@ -25,10 +25,9 @@ impl LinuxUHIDTransport {
         let (send_write, mut recv_write) = unbounded_channel::<Vec<u8>>();
         let mut file_rh = create_ctaphid_device()?;
         let mut file_wh = file_rh.try_clone()?;
-        let read_jh = tokio::task::spawn_blocking(move || {
+        let _read_jh = tokio::task::spawn_blocking(move || {
             loop {
-                let event = file_rh
-                    .read_output_event();
+                let event = file_rh.read_output_event();
                 match event {
                     Ok(OutputEvent::Output { mut data }) => {
                         // TODO: BUG: why do UHID output event come with an extra byte in the front?
@@ -40,21 +39,26 @@ impl LinuxUHIDTransport {
                     }
                     Ok(event) => {
                         debug!(?event, "Got an OutputEvent which isn't Output, ignoring.");
-                    },
+                    }
                     Err(StreamError::Io(e)) => {
-                        send_read.send(Err(TransportError::IoError(e)))
+                        send_read
+                            .send(Err(TransportError::IoError(e)))
                             .unwrap_or_else(|_| error!("Couldn't send IO error to server"));
                         break;
-                    },
+                    }
                     Err(StreamError::UnknownEventType(e)) => {
                         error!("Received event of unknown type '{}', ignoring", e);
                     }
                 }
             }
         });
-        let write_jh = tokio::task::spawn_blocking(move || {
+        let _write_jh = tokio::task::spawn_blocking(move || {
             while let Some(data) = recv_write.blocking_recv() {
-                assert_eq!(data.len(), HID_REPORT_SIZE as usize, "Payload must fit HID Report size");
+                assert_eq!(
+                    data.len(),
+                    HID_REPORT_SIZE as usize,
+                    "Payload must fit HID Report size"
+                );
                 file_wh
                     .write_input_event(&data)
                     .expect("Write task couldn't write input event");
@@ -86,7 +90,7 @@ impl futures::Sink<Vec<u8>> for LinuxUHIDTransport {
 
     fn poll_ready(
         self: Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
+        _cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
     }
@@ -100,14 +104,14 @@ impl futures::Sink<Vec<u8>> for LinuxUHIDTransport {
 
     fn poll_flush(
         self: Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
+        _cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
     }
 
     fn poll_close(
         self: Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
+        _cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
     }

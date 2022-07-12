@@ -7,10 +7,13 @@ fn cmp_values(val1: &Value, val2: &Value) -> Ordering {
         return t1.len().cmp(&t2.len()).then_with(|| t1.cmp(t2));
     }
     if let (Some(t1), Some(t2)) = (val1.as_integer(), val2.as_integer()) {
-        return t1.cmp(&t2)
+        return t1.cmp(&t2);
     }
     // TODO: more robust comparison for serialization
-    panic!("Encountered map with non integer/text keys or non equal key types: {:?}, {:?}", val1, val2);
+    panic!(
+        "Encountered map with non integer/text keys or non equal key types: {:?}, {:?}",
+        val1, val2
+    );
 }
 
 /// Given a CBOR value, modifies it such that any map within it is ordered according to

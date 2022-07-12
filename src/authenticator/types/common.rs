@@ -1,5 +1,5 @@
 use modular_bitfield::{bitfield, prelude::B3};
-use serde::{Deserialize, Serialize, ser::SerializeTuple};
+use serde::{ser::SerializeTuple, Deserialize, Serialize};
 
 use crate::authenticator::crypto::COSEAlgorithmIdentifier;
 
@@ -62,11 +62,17 @@ pub struct AuthenticatorData {
 impl Serialize for AuthenticatorData {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer {
-        let n_fields = 3 + (self.attested_cred_data.is_some() as u8) + (self.extensions.is_some() as u8);
+        S: serde::Serializer,
+    {
+        let n_fields =
+            3 + (self.attested_cred_data.is_some() as u8) + (self.extensions.is_some() as u8);
         let mut tup = serializer.serialize_tuple(n_fields as usize)?;
         tup.serialize_element(&self.rp_id_hash)?;
-        assert_eq!(self.flags.bytes.len(), 1, "AuthenticatorDataFlags must be 1 byte");
+        assert_eq!(
+            self.flags.bytes.len(),
+            1,
+            "AuthenticatorDataFlags must be 1 byte"
+        );
         tup.serialize_element(&self.flags.bytes[0])?;
         tup.serialize_element(&self.counter)?;
         if let Some(attested_cred_data) = &self.attested_cred_data {
@@ -79,7 +85,9 @@ impl Serialize for AuthenticatorData {
     }
 }
 
-#[bitfield]
+#[allow(dead_code)]
+#[bitfield(bits = 8)]
+#[repr(u8)]
 #[derive(Debug, Serialize, Deserialize)]
 /// [See more](https://www.w3.org/TR/webauthn/#authenticator-data)
 pub struct AuthenticatorDataFlags {
@@ -103,7 +111,8 @@ pub struct AttestedCredData {
 impl Serialize for AttestedCredData {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer {
+        S: serde::Serializer,
+    {
         let mut tup = serializer.serialize_tuple(4)?;
         tup.serialize_element(&self.aaguid)?;
         tup.serialize_element(&self.credential_id_length)?;
@@ -145,7 +154,6 @@ pub struct AttestationCert(#[serde(with = "serde_bytes")] pub Vec<u8>);
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CaCert(#[serde(with = "serde_bytes")] pub Vec<u8>);
 
-
 #[cfg(test)]
 mod tests {
     use crate::authenticator::types::APP_AAGUID;
@@ -160,10 +168,10 @@ mod tests {
             rp_id_hash: 0x1337,
             attested_cred_data: Some(AttestedCredData {
                 aaguid: APP_AAGUID,
-                credential_id: CredentialId(vec![1,3,3,7]),
+                credential_id: CredentialId(vec![1, 3, 3, 7]),
                 credential_id_length: 4,
-                credential_public_key: CredentialPublicKey(vec![5, 5, 5, 5])
-            })
+                credential_public_key: CredentialPublicKey(vec![5, 5, 5, 5]),
+            }),
         };
         let mut vec = vec![];
         ciborium::ser::into_writer(&auth_data, &mut vec).unwrap();

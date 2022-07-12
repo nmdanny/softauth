@@ -28,19 +28,19 @@ impl<T, U> From<T> for KeymappedStruct<T, U> {
     }
 }
 
-impl <T, U> KeymappedStruct<T, U> {
+impl<T, U> KeymappedStruct<T, U> {
     pub fn into_inner(self) -> T {
         self.0
     }
 }
 
-impl <T, U> AsRef<T> for KeymappedStruct<T, U> {
+impl<T, U> AsRef<T> for KeymappedStruct<T, U> {
     fn as_ref(&self) -> &T {
         &self.0
     }
 }
 
-impl <T, U> AsMut<T> for KeymappedStruct<T, U> {
+impl<T, U> AsMut<T> for KeymappedStruct<T, U> {
     fn as_mut(&mut self) -> &mut T {
         &mut self.0
     }
@@ -77,7 +77,7 @@ impl<U: Serialize + Eq + Hash + Clone, T: VecKeymappable<U>> Keymappable<U> for 
     }
 }
 
-impl <U: Serialize + Eq + Hash + Clone> VecKeymappable<U> for () {
+impl<U: Serialize + Eq + Hash + Clone> VecKeymappable<U> for () {
     fn field_mappings() -> Vec<(&'static str, U)> {
         vec![]
     }
@@ -86,9 +86,8 @@ impl <U: Serialize + Eq + Hash + Clone> VecKeymappable<U> for () {
 #[cfg(test)]
 mod tests {
     use super::{KeymappedStruct, VecKeymappable};
-    use serde::{Serialize, Deserialize};
-     
-    
+    use serde::{Deserialize, Serialize};
+
     #[test]
     fn test_keymapped() {
         #[derive(Serialize, Deserialize)]
