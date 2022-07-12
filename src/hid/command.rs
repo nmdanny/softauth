@@ -1,6 +1,6 @@
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use thiserror::Error;
-use zerocopy::{FromBytes, AsBytes, Unaligned, U32, BigEndian};
+use zerocopy::{AsBytes, BigEndian, FromBytes, Unaligned, U32};
 
 use super::packet::Message;
 
@@ -30,13 +30,18 @@ pub enum InvalidCommandType {
     UnsupportedVendor(u8),
 
     #[error("'{0}' is not a valid CTAP-HID command identifier")]
-    InvalidCommand(u8)
+    InvalidCommand(u8),
 }
 
 impl CommandType {
     /// Parses a command identifier from CTAP-HID packet
-    pub fn from_packet_command_identifier(mut command_identifier: u8) -> Result<CommandType, InvalidCommandType> {
-        assert!(command_identifier & 0x80 != 0, "Command identifier MSB must be set");
+    pub fn from_packet_command_identifier(
+        mut command_identifier: u8,
+    ) -> Result<CommandType, InvalidCommandType> {
+        assert!(
+            command_identifier & 0x80 != 0,
+            "Command identifier MSB must be set"
+        );
         command_identifier &= 0x7F;
         if (CTAPHID_VENDOR_FIRST..=CTAPHID_VENDOR_LAST).contains(&command_identifier) {
             return Err(InvalidCommandType::UnsupportedVendor(command_identifier));
@@ -46,32 +51,36 @@ impl CommandType {
     }
 }
 
-/// Error codes that may be sent as part of a response message, see 
+/// Error codes that may be sent as part of a response message, see
 /// https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-20210615.html#usb-hid-error
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, TryFromPrimitive, IntoPrimitive)]
 pub enum ErrorCode {
-    InvalidCmd = 0x01, 	// The command in the request is invalid
-    InvalidPar = 0x02, 	// The parameter(s) in the request is invalid
-    InvalidLen = 0x03, 	// The length field (BCNT) is invalid for the request
-    InvalidSeq = 0x04, 	// The sequence does not match expected value
-    MsgTimeout = 0x05, 	// The message has timed out
-    ChannelBusy = 0x06, 	// The device is busy for the requesting channel. The client SHOULD retry the request after a short delay. Note that the client MAY abort the transaction if the command is no longer relevant.
-    LockRequired = 0x0A, 	// Command requires channel lock
-    InvalidChannel = 0x0B, 	// CID is not valid.
-    Other = 0x7F 	// Unspecified error 
+    InvalidCmd = 0x01,     // The command in the request is invalid
+    InvalidPar = 0x02,     // The parameter(s) in the request is invalid
+    InvalidLen = 0x03,     // The length field (BCNT) is invalid for the request
+    InvalidSeq = 0x04,     // The sequence does not match expected value
+    MsgTimeout = 0x05,     // The message has timed out
+    ChannelBusy = 0x06, // The device is busy for the requesting channel. The client SHOULD retry the request after a short delay. Note that the client MAY abort the transaction if the command is no longer relevant.
+    LockRequired = 0x0A, // Command requires channel lock
+    InvalidChannel = 0x0B, // CID is not valid.
+    Other = 0x7F,       // Unspecified error
 }
 
 impl ErrorCode {
     pub fn to_message(self, channel_identifier: u32) -> Message {
-        Message { channel_identifier, command: Ok(CommandType::Error), payload: vec![self.into() ] }
+        Message {
+            channel_identifier,
+            command: Ok(CommandType::Error),
+            payload: vec![self.into()],
+        }
     }
 }
 
 #[repr(C)]
 #[derive(FromBytes, AsBytes, Unaligned, Debug)]
 pub struct InitCommand {
-    pub nonce: [u8; 8]
+    pub nonce: [u8; 8],
 }
 
 #[repr(C)]
@@ -83,7 +92,7 @@ pub struct InitCommandResponse {
     pub major_device_version: u8,
     pub minor_device_version: u8,
     pub build_device_version: u8,
-    pub capabilities_flag: u8
+    pub capabilities_flag: u8,
 }
 
 const CAPABILITY_WINK: u8 = 0x01;
@@ -92,14 +101,14 @@ const CAPABILITY_NMSG: u8 = 0x08;
 
 impl InitCommandResponse {
     pub fn new(nonce: [u8; 8], channel_id: u32) -> Self {
-        InitCommandResponse { 
-            nonce, 
+        InitCommandResponse {
+            nonce,
             channel_id: channel_id.into(),
             ctaphid_version: 2,
-            major_device_version: 0, 
-            minor_device_version: 0, 
-            build_device_version: 0, 
-            capabilities_flag: CAPABILITY_CBOR | CAPABILITY_NMSG
+            major_device_version: 0,
+            minor_device_version: 0,
+            build_device_version: 0,
+            capabilities_flag: CAPABILITY_CBOR | CAPABILITY_NMSG,
         }
     }
 }

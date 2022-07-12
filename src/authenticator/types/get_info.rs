@@ -1,12 +1,10 @@
+use crate::cbor::{key_mapped::VecKeymappable, serde_bytes_array};
 /// This module defines the various features and options supported by the authenticator
 use serde::{Deserialize, Serialize};
-use crate::cbor::{serde_bytes_array, key_mapped::VecKeymappable};
 
 /// https://www.w3.org/TR/webauthn-2/#aaguid
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct Aaguid(
-    #[serde(with = "serde_bytes_array")]
-    [u8; 16]);
+pub struct Aaguid(#[serde(with = "serde_bytes_array")] [u8; 16]);
 
 pub const APP_AAGUID: Aaguid = Aaguid([1, 3, 3, 7, 1, 1, 2, 3, 5, 8, 13, 21, 1, 3, 3, 7]);
 

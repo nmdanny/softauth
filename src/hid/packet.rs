@@ -1,10 +1,8 @@
-use std::collections::{
-    hash_map::{Entry},
-    HashMap,
-};
+use std::collections::{hash_map::Entry, HashMap};
 
 use super::{
-    command::{CommandType, InvalidCommandType, ErrorCode}, channel::BROADCAST_CHANNEL
+    channel::BROADCAST_CHANNEL,
+    command::{CommandType, ErrorCode, InvalidCommandType},
 };
 use bytes::BufMut;
 
@@ -12,7 +10,6 @@ use thiserror::Error;
 use tokio_util::codec::{Decoder, Encoder};
 
 use zerocopy::{AsBytes, BigEndian, ByteSlice, FromBytes, LayoutVerified, Unaligned, U16, U32};
-
 
 /// Size of an input or output HID report in bytes,
 /// equal to the size of a CTAP-HID packet.
@@ -54,18 +51,21 @@ pub struct ContinuationPacket {
     pub data: [u8; CONT_PACKET_PAYLOAD_SIZE],
 }
 
-
 /// A CTAP-HID packet
 #[derive(Debug)]
 pub enum Packet<B: ByteSlice> {
     InitializationPacket(LayoutVerified<B, InitializationPacket>),
-    ContinuationPacket(LayoutVerified<B, ContinuationPacket>)
+    ContinuationPacket(LayoutVerified<B, ContinuationPacket>),
 }
 
-impl <B: ByteSlice> Packet<B> {
+impl<B: ByteSlice> Packet<B> {
     /// Creates a packet from a HID report whose size is assumed to be [HID_REPORT_SIZE]
     pub fn from_report(report: B) -> Self {
-        assert_eq!(report.len(), HID_REPORT_SIZE as usize, "Packet size must match HID_REPORT_SIZE");
+        assert_eq!(
+            report.len(),
+            HID_REPORT_SIZE as usize,
+            "Packet size must match HID_REPORT_SIZE"
+        );
         if report[4] & 0x80 != 0 {
             Packet::InitializationPacket(LayoutVerified::new_unaligned(report).unwrap())
         } else {
@@ -106,11 +106,11 @@ impl ChannelParseState {
         let channel_identifier = init.channel_identifier.get();
         let command = CommandType::from_packet_command_identifier(init.command_identifier);
         if init.payload_length.get() as usize > MAX_MESSAGE_PAYLOAD_SIZE {
-            return Err(MessageDecodeError::InvalidPayloadLength { 
+            return Err(MessageDecodeError::InvalidPayloadLength {
                 chan: channel_identifier,
-                invalid_len: init.payload_length.get() });
+                invalid_len: init.payload_length.get(),
+            });
         }
-
 
         let total_payload_length = init.payload_length.get() as usize;
         let mut payload = Vec::new();
@@ -138,7 +138,7 @@ impl ChannelParseState {
     }
 
     /// Tries to finish parsing and return the finally assembled message.
-    pub fn try_finish(&mut self) -> Option<Message>{
+    pub fn try_finish(&mut self) -> Option<Message> {
         if !self.is_finished() {
             return None;
         }
@@ -158,13 +158,15 @@ impl ChannelParseState {
             "Got ContinuationPacket with wrong channel ID"
         );
         if self.is_finished() || self.wip_message.is_none() {
-            return Err(MessageDecodeError::UnexpectedCont { chan: self.channel_identifier});
+            return Err(MessageDecodeError::UnexpectedCont {
+                chan: self.channel_identifier,
+            });
         }
         if cont.packet_sequence != self.next_seq_num {
             return Err(MessageDecodeError::UnexpectedSeq {
                 expected: self.next_seq_num,
                 gotten: cont.packet_sequence,
-                chan: self.channel_identifier
+                chan: self.channel_identifier,
             });
         }
         if cont.packet_sequence > MAX_SEQ_NUM {
@@ -174,7 +176,8 @@ impl ChannelParseState {
         }
         let bytes_to_take = self.remaining_payload_length.min(cont.data.len());
         self.wip_message
-            .as_mut().unwrap()
+            .as_mut()
+            .unwrap()
             .payload
             .extend_from_slice(&cont.data[..bytes_to_take]);
         self.remaining_payload_length -= bytes_to_take;
@@ -205,7 +208,7 @@ pub enum MessageDecodeError {
     UnexpectedSeq { expected: u8, gotten: u8, chan: u32 },
 
     #[error("[chan {chan}] Expected a continuation packet with seq {expected_seq}, got initialization instead.")]
-    UnexpectedInit { expected_seq: u8, chan: u32},
+    UnexpectedInit { expected_seq: u8, chan: u32 },
 
     #[error("[chan {chan}] Expected an initialization packet, got a continuation packet instead.")]
     UnexpectedCont { chan: u32 },
@@ -214,15 +217,17 @@ pub enum MessageDecodeError {
     InvalidPayloadLength { chan: u32, invalid_len: u16 },
 
     #[error("[chan {chan}] Got an invalid command: {reason}")]
-    InvalidCommand{ chan: u32, reason: InvalidCommandType },
+    InvalidCommand {
+        chan: u32,
+        reason: InvalidCommandType,
+    },
 
     #[error("[chan {chan}] Got an invalid parameter: {reason}")]
-    InvalidParameter{ chan: u32, reason: String },
+    InvalidParameter { chan: u32, reason: String },
 
     #[error(transparent)]
-    IoError(#[from] std::io::Error)
+    IoError(#[from] std::io::Error),
 }
-
 
 impl MessageDecodeError {
     pub fn get_channel(&self) -> u32 {
@@ -233,7 +238,7 @@ impl MessageDecodeError {
             MessageDecodeError::InvalidPayloadLength { chan, .. } => *chan,
             MessageDecodeError::InvalidParameter { chan, .. } => *chan,
             MessageDecodeError::InvalidCommand { chan, .. } => *chan,
-            MessageDecodeError::IoError(..) => BROADCAST_CHANNEL 
+            MessageDecodeError::IoError(..) => BROADCAST_CHANNEL,
         }
     }
 }
@@ -247,7 +252,7 @@ impl From<MessageDecodeError> for ErrorCode {
             MessageDecodeError::InvalidPayloadLength { .. } => ErrorCode::InvalidLen,
             MessageDecodeError::InvalidCommand { .. } => ErrorCode::InvalidCmd,
             MessageDecodeError::InvalidParameter { .. } => ErrorCode::InvalidPar,
-            MessageDecodeError::IoError(..) => ErrorCode::Other
+            MessageDecodeError::IoError(..) => ErrorCode::Other,
         }
     }
 }
@@ -268,9 +273,16 @@ impl MessageDecoder {
 
     /// Decodes a new CTAP HID report, updating the state of the decoder, and may also return the final
     /// decoded message if this was the last packet for said message.
-    pub fn decode_packet<B: AsRef<[u8]>>(&mut self, report: B) -> Result<Option<Message>, MessageDecodeError> {
+    pub fn decode_packet<B: AsRef<[u8]>>(
+        &mut self,
+        report: B,
+    ) -> Result<Option<Message>, MessageDecodeError> {
         let report = report.as_ref();
-        assert_eq!(report.len(), HID_REPORT_SIZE as usize, "Buffer size doesn't match expected HID REPORT SIZE");
+        assert_eq!(
+            report.len(),
+            HID_REPORT_SIZE as usize,
+            "Buffer size doesn't match expected HID REPORT SIZE"
+        );
         if report[4] & 0x80 != 0 {
             self.decode_initialization_packet(report)
         } else {
@@ -278,28 +290,38 @@ impl MessageDecoder {
         }
     }
 
-    
     /// Tries decoding a new initialization packet. On decode success, might
     /// return the message if it was entirely contained in the packet's payload.
-    fn decode_initialization_packet<B: AsRef<[u8]>>(&mut self, report: B) -> Result<Option<Message>, MessageDecodeError> {
+    fn decode_initialization_packet<B: AsRef<[u8]>>(
+        &mut self,
+        report: B,
+    ) -> Result<Option<Message>, MessageDecodeError> {
         let report = report.as_ref();
-        assert_eq!(report.len(), HID_REPORT_SIZE as usize, "Buffer size doesn't match expected HID REPORT SIZE");
-        assert_ne!(report[4] & 0x80, 0, "MSB of 4th byte must be set in an initialization packet");
-        let packet =
-            LayoutVerified::<&[u8], InitializationPacket>::new_unaligned(report)
-                .unwrap();
+        assert_eq!(
+            report.len(),
+            HID_REPORT_SIZE as usize,
+            "Buffer size doesn't match expected HID REPORT SIZE"
+        );
+        assert_ne!(
+            report[4] & 0x80,
+            0,
+            "MSB of 4th byte must be set in an initialization packet"
+        );
+        let packet = LayoutVerified::<&[u8], InitializationPacket>::new_unaligned(report).unwrap();
         match self.chan_packets.entry(packet.channel_identifier.get()) {
             Entry::Occupied(ent) => {
                 return Err(MessageDecodeError::UnexpectedInit {
                     expected_seq: ent.get().next_seq_num,
-                    chan: packet.channel_identifier.get()
+                    chan: packet.channel_identifier.get(),
                 })
             }
             Entry::Vacant(ent) => {
                 let mut parse_state = ChannelParseState::new(&packet)?;
                 match parse_state.try_finish() {
                     Some(message) => return Ok(Some(message)),
-                    None => { ent.insert(parse_state); }
+                    None => {
+                        ent.insert(parse_state);
+                    }
                 }
             }
         }
@@ -308,23 +330,36 @@ impl MessageDecoder {
 
     /// Tries decoding a continuation packet. On decode success, if it was
     /// the final packet of a message - returns that message.
-    fn decode_continuation_packet<B: AsRef<[u8]>>(&mut self, report: B) -> Result<Option<Message>, MessageDecodeError> {
+    fn decode_continuation_packet<B: AsRef<[u8]>>(
+        &mut self,
+        report: B,
+    ) -> Result<Option<Message>, MessageDecodeError> {
         let report = report.as_ref();
-        assert_eq!(report.len(), HID_REPORT_SIZE as usize, "Buffer size doesn't match expected HID REPORT SIZE");
-        assert_eq!(report[4] & 0x80, 0, "MSB of 4th byte must not be set in a continuation packet");
-        let packet =
-            LayoutVerified::<&[u8], ContinuationPacket>::new_unaligned(report)
-                .unwrap();
+        assert_eq!(
+            report.len(),
+            HID_REPORT_SIZE as usize,
+            "Buffer size doesn't match expected HID REPORT SIZE"
+        );
+        assert_eq!(
+            report[4] & 0x80,
+            0,
+            "MSB of 4th byte must not be set in a continuation packet"
+        );
+        let packet = LayoutVerified::<&[u8], ContinuationPacket>::new_unaligned(report).unwrap();
         match self.chan_packets.entry(packet.channel_identifier.get()) {
             Entry::Occupied(mut ent) => {
                 let parse_state = ent.get_mut();
                 parse_state.add_continuation_packet(&packet)?;
                 if parse_state.is_finished() {
                     let (_, mut parse_state) = ent.remove_entry();
-                    return Ok(Some(parse_state.try_finish().unwrap()))
+                    return Ok(Some(parse_state.try_finish().unwrap()));
                 }
             }
-            Entry::Vacant(_) => return Err(MessageDecodeError::UnexpectedCont { chan: packet.channel_identifier.get()}),
+            Entry::Vacant(_) => {
+                return Err(MessageDecodeError::UnexpectedCont {
+                    chan: packet.channel_identifier.get(),
+                })
+            }
         }
         Ok(None)
     }
@@ -346,7 +381,7 @@ impl Decoder for MessageDecoder {
             let report = src.split_to(HID_REPORT_SIZE as usize);
             let maybe_message = self.decode_packet(report)?;
             if maybe_message.is_some() {
-                return Ok(maybe_message)
+                return Ok(maybe_message);
             }
         }
         Ok(None)
@@ -365,10 +400,14 @@ pub enum MessageEncoderError {
 pub struct MessageEncoder {}
 impl MessageEncoder {
     pub fn new() -> Self {
-        MessageEncoder {  }
+        MessageEncoder {}
     }
 
-    pub fn encode_message(&self, message: &Message, dest: &mut bytes::BytesMut) -> Result<(), MessageEncoderError> {
+    pub fn encode_message(
+        &self,
+        message: &Message,
+        dest: &mut bytes::BytesMut,
+    ) -> Result<(), MessageEncoderError> {
         if message.payload.len() > MAX_MESSAGE_PAYLOAD_SIZE {
             return Err(MessageEncoderError::PayloadTooLarge {
                 got: message.payload.len(),
@@ -383,7 +422,8 @@ impl MessageEncoder {
             channel_identifier: message.channel_identifier.into(),
             payload_length: (message.payload.len() as u16).into(),
             command_identifier: u8::from(
-                message.command
+                message
+                    .command
                     .expect("Cannot encode message with unsupported command"),
             ) | 0x80,
             data: init_payload,
@@ -400,7 +440,11 @@ impl MessageEncoder {
             dest.put(cont_payload.as_bytes());
         }
 
-        assert_eq!(dest.len() % HID_REPORT_SIZE as usize, 0, "Encoded message bytes must be divisible by HID_REPORT_SIZE");
+        assert_eq!(
+            dest.len() % HID_REPORT_SIZE as usize,
+            0,
+            "Encoded message bytes must be divisible by HID_REPORT_SIZE"
+        );
         Ok(())
     }
 }
@@ -472,11 +516,7 @@ mod tests {
             vec![1u8; INIT_PACKET_PAYLOAD_SIZE],
             vec![2u8; CONT_PACKET_PAYLOAD_SIZE],
         ];
-        let raw = expected
-            .iter()
-            .flatten()
-            .cloned()
-            .collect::<Vec<_>>();
+        let raw = expected.iter().flatten().cloned().collect::<Vec<_>>();
         assert_eq!(split_to_vecs(&raw), expected);
     }
 
@@ -503,11 +543,10 @@ mod tests {
 
     #[test]
     fn test_encode_decode_short_msg() {
-
         let msg = Message {
             channel_identifier: 1337,
             command: Ok(CommandType::Msg),
-            payload: vec![1, 3, 3, 7]
+            payload: vec![1, 3, 3, 7],
         };
 
         let mut buf = bytes::BytesMut::new();
@@ -530,7 +569,7 @@ mod tests {
         let msg = Message {
             channel_identifier: 1337,
             command: Ok(CommandType::Msg),
-            payload: vec![1u8; INIT_PACKET_PAYLOAD_SIZE + CONT_PACKET_PAYLOAD_SIZE * 2 + 5]
+            payload: vec![1u8; INIT_PACKET_PAYLOAD_SIZE + CONT_PACKET_PAYLOAD_SIZE * 2 + 5],
         };
 
         let mut buf = bytes::BytesMut::new();

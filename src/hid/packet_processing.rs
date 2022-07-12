@@ -1,22 +1,28 @@
-use tracing::{warn, trace, error, instrument, debug_span};
-use zerocopy::{LayoutVerified, AsBytes};
+use tracing::{debug_span, error, instrument, trace, warn};
+use zerocopy::{AsBytes, LayoutVerified};
 
-use crate::hid::{channel::{BROADCAST_CHANNEL, RESERVED_CHANNEL}, server::ServerError, command::{InitCommandResponse, CommandType, InvalidCommandType}};
+use crate::hid::{
+    channel::{BROADCAST_CHANNEL, RESERVED_CHANNEL},
+    command::{CommandType, InitCommandResponse, InvalidCommandType},
+    server::ServerError,
+};
 
-use super::{channel::ChannelAllocator, packet::{Message, ChannelParseState, InitializationPacket, MessageDecodeError, Packet}, command::InitCommand};
+use super::{
+    channel::ChannelAllocator,
+    command::InitCommand,
+    packet::{ChannelParseState, InitializationPacket, Message, MessageDecodeError, Packet},
+};
 
-
-/// Handles logic of CTAP-HID packet processing in a synchronous manner: 
+/// Handles logic of CTAP-HID packet processing in a synchronous manner:
 /// - Allocating channels upon beginning a new transaction
 /// - Tracking packet parse state
 /// - Returning errors when given the wrong packet (unexpected or busy channel)
-/// 
+///
 /// Does not handle timeouts, IO (includnig writing responses) or the actual logic of CTAP commands.
 pub struct PacketProcessing {
     chan_alloc: ChannelAllocator,
     state: PacketProcessingState,
 }
-
 
 #[derive(Debug)]
 enum PacketProcessingState {
@@ -26,7 +32,6 @@ enum PacketProcessingState {
         decoder: ChannelParseState,
     },
 }
-
 
 /// The result of processing a valid packet
 #[derive(Debug, Clone)]
@@ -44,7 +49,7 @@ pub enum PacketProcessingResult {
 
     /// The current transaction has been aborted (no response
     /// message is to be sent)
-    Aborted
+    Aborted,
 }
 
 /// The result of a packet handler method in response to receiving a packet.
@@ -254,5 +259,3 @@ impl PacketProcessing {
         }
     }
 }
-
-

@@ -27,8 +27,7 @@ impl LinuxUHIDTransport {
         let mut file_wh = file_rh.try_clone()?;
         let read_jh = tokio::task::spawn_blocking(move || {
             loop {
-                let event = file_rh
-                    .read_output_event();
+                let event = file_rh.read_output_event();
                 match event {
                     Ok(OutputEvent::Output { mut data }) => {
                         // TODO: BUG: why do UHID output event come with an extra byte in the front?
@@ -40,12 +39,13 @@ impl LinuxUHIDTransport {
                     }
                     Ok(event) => {
                         debug!(?event, "Got an OutputEvent which isn't Output, ignoring.");
-                    },
+                    }
                     Err(StreamError::Io(e)) => {
-                        send_read.send(Err(TransportError::IoError(e)))
+                        send_read
+                            .send(Err(TransportError::IoError(e)))
                             .unwrap_or_else(|_| error!("Couldn't send IO error to server"));
                         break;
-                    },
+                    }
                     Err(StreamError::UnknownEventType(e)) => {
                         error!("Received event of unknown type '{}', ignoring", e);
                     }
@@ -54,7 +54,11 @@ impl LinuxUHIDTransport {
         });
         let write_jh = tokio::task::spawn_blocking(move || {
             while let Some(data) = recv_write.blocking_recv() {
-                assert_eq!(data.len(), HID_REPORT_SIZE as usize, "Payload must fit HID Report size");
+                assert_eq!(
+                    data.len(),
+                    HID_REPORT_SIZE as usize,
+                    "Payload must fit HID Report size"
+                );
                 file_wh
                     .write_input_event(&data)
                     .expect("Write task couldn't write input event");
