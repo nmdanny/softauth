@@ -1,4 +1,4 @@
-name: Build
+name: Rust workflow
 
 on:
   push:
@@ -8,7 +8,6 @@ on:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -27,18 +26,33 @@ jobs:
         override: true
     - name: Build
       run: cargo build --verbose
-    # clippy
-    - run: rustup component add clippy
-      if: matrix.rust == 'beta' || matrix.rust == 'stable'
-    - working-directory: ${{ matrix.conf.name }}
-      name: clippy ${{ matrix.conf.name }}
-      run: cargo clippy --all-targets -- -D warnings
-      if: matrix.rust == 'beta' || matrix.rust == 'stable'
-    # fmt
-    - working-directory: ${{ matrix.conf.name }}
-      name: rustfmt ${{ matrix.conf.name }}
-      run: cargo fmt --check
-      if: matrix.rust == 'beta' || matrix.rust == 'stable'
-    # tests
     - name: Run tests
       run: cargo test --verbose
+
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Install dependencies
+      run: sudo apt-get install -y libclang-dev
+    - uses: actions/checkout@v2
+    - uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        override: true
+        components: clippy
+    - name: clippy
+      run: cargo clippy --all-targets -- -D warnings
+  
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Install dependencies
+      run: sudo apt-get install -y libclang-dev
+    - uses: actions/checkout@v2
+    - uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        override: true
+        components: rustfmt
+    - name: rustfmt
+      run: cargo fmt --check
