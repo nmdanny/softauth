@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 /// Identifies a cryptographic algorithm.
 ///
 /// [See more](https://w3c.github.io/webauthn/#typedefdef-cosealgorithmidentifier)
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct COSEAlgorithmIdentifier(i32);
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, PartialOrd, Ord, Hash)]
+pub struct COSEAlgorithmIdentifier(pub i32);
 
 /// A COSE key object
 /// [See more in WebAuthn spec](https://www.w3.org/TR/webauthn/#sctn-attested-credential-data)
